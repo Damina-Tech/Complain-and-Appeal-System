@@ -9,14 +9,14 @@ export const NAV_DATA = [
         icon: Icons.HomeIcon,
         items: [
           {
-            title: "eCommerce",
+            title: "Dashboard",
             url: "/",
           },
         ],
       },
       {
-        title: "Calendar",
-        url: "/calendar",
+        title: "New Complaint / Appeal",
+        url: "/cases",
         icon: Icons.Calendar,
         items: [],
       },
@@ -28,38 +28,20 @@ export const NAV_DATA = [
       },
       {
         title: "Forms",
+        url: "/forms",
         icon: Icons.Alphabet,
-        items: [
-          {
-            title: "Form Elements",
-            url: "/forms/form-elements",
-          },
-          {
-            title: "Form Layout",
-            url: "/forms/form-layout",
-          },
-        ],
+        items: [],
       },
       {
         title: "Tables",
         url: "/tables",
         icon: Icons.Table,
-        items: [
-          {
-            title: "Tables",
-            url: "/tables",
-          },
-        ],
+        items: [],
       },
       {
         title: "Pages",
         icon: Icons.Alphabet,
-        items: [
-          {
-            title: "Settings",
-            url: "/pages/settings",
-          },
-        ],
+        items: [],
       },
     ],
   },
