@@ -3,8 +3,6 @@ import "@/css/style.css";
 
 import { Sidebar } from "@/components/Layouts/sidebar";
 
-import "flatpickr/dist/flatpickr.min.css";
-import "jsvectormap/dist/jsvectormap.css";
 
 import { Header } from "@/components/Layouts/header";
 import type { Metadata } from "next";
@@ -24,6 +22,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: PropsWithChildren) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+        />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/jsvectormap/dist/jsvectormap.min.css"
+        />
+      </head>
       <body>
         <Providers>
           <NextTopLoader color="#5750F1" showSpinner={false} />
