@@ -1,11 +1,11 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import { ApiOkResponse, ApiOAuth2, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import type * as KeycloakConnect from 'keycloak-connect';
 import { KeycloakAuthGuard } from '../keycloak/auth/auth.guard';
 
 @ApiTags('users')
-@ApiOAuth2(['openid'], 'keycloak')
+@ApiBearerAuth()
 @Controller('users')
 export class UsersController {
 
