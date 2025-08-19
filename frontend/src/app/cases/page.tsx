@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
   Table,
@@ -38,56 +38,64 @@ export default function ComplaintAppealPage() {
   const [search, setSearch] = useState<string>("");
   const [date, setDate] = useState<Date | undefined>();
   const [openDialog, setOpenDialog] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [creating, setCreating] = useState<boolean>(false);
+  const [form, setForm] = useState({
+    fullName: "",
+    nationalId: "",
+    phone: "",
+    category: "",
+    date: "",
+  });
+  const [data, setData] = useState<Array<{
+    id: number | string;
+    name: string;
+    nationalId: string;
+    phone: string;
+    category: string;
+    date: string; // YYYY-MM-DD
+    status: string;
+  }>>([]);
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
 
-  // ✅ Example Data with all status
-  const data = [
-    {
-      id: 1,
-      name: "Ahmed Ali",
-      nationalId: "1234567890",
-      phone: "0912345678",
-      category: "complaint",
-      date: "2025-08-10",
-      status: "Pending",
-    },
-    {
-      id: 2,
-      name: "Fatima Mohammed",
-      nationalId: "0987654321",
-      phone: "0922334455",
-      category: "appeal",
-      date: "2025-08-12",
-      status: "In Investigation",
-    },
-    {
-      id: 3,
-      name: "Mohammed Ibrahim",
-      nationalId: "1122334455",
-      phone: "0933445566",
-      category: "complaint",
-      date: "2025-08-13",
-      status: "Resolved",
-    },
-    {
-      id: 4,
-      name: "Amina Yusuf",
-      nationalId: "2233445566",
-      phone: "0944556677",
-      category: "appeal",
-      date: "2025-08-14",
-      status: "Rejected",
-    },
-    {
-      id: 5,
-      name: "Hassan Ahmed",
-      nationalId: "3344556677",
-      phone: "0955667788",
-      category: "complaint",
-      date: "2025-08-15",
-      status: "Closed",
-    },
-  ];
+  const loadUsers = async () => {
+    if (!API_URL) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) return;
+    try {
+      setLoading(true);
+      setError("");
+      const res = await fetch(`${API_URL}/users/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to load: ${res.status}`);
+      }
+      const users = await res.json();
+      const mapped = (Array.isArray(users) ? users : []).map((u: any) => ({
+        id: u.id,
+        name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "",
+        nationalId: u.national_id || "",
+        phone: u.phone_number || "",
+        category: "complaint",
+        date: (u.created_at ? String(u.created_at).slice(0, 10) : "").replace(/T.*/, ""),
+        status: u.status || "Pending",
+      }));
+      setData(mapped);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch real data from Django `/api/users/` and map to table shape
+  useEffect(() => {
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredData = data.filter((item) => {
     const matchCategory = category === "all" || item.category === category;
@@ -152,6 +160,20 @@ export default function ComplaintAppealPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-4 text-center text-gray-500 dark:text-gray-300">
+                  Loading...
+                </TableCell>
+              </TableRow>
+            )}
+            {!!error && !loading && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-4 text-center text-red-500">
+                  {error}
+                </TableCell>
+              </TableRow>
+            )}
             {filteredData.length > 0 ? (
               filteredData.map((item) => (
                 <TableRow
@@ -210,11 +232,76 @@ export default function ComplaintAppealPage() {
         onClose={() => setOpenDialog(false)}
         title="Add New Case"
       >
-        <form className="space-y-4">
-          <Input placeholder="Full Name" />
-          <Input placeholder="National ID" />
-          <Input placeholder="Phone Number" />
-          <Select>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!API_URL) {
+              setError("NEXT_PUBLIC_API_URL is not set");
+              return;
+            }
+            const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+            if (!token) {
+              setError("You are not authenticated. Please sign in.");
+              return;
+            }
+            try {
+              setCreating(true);
+              // Derive a minimal valid Django user payload from the form
+              const [first, ...rest] = form.fullName.trim().split(" ");
+              const payload: any = {
+                username: form.nationalId || form.phone || (first ? first.toLowerCase() : `user_${Date.now()}`),
+                first_name: first || "",
+                last_name: rest.join(" ") || "",
+                phone_number: form.phone || "",
+                national_id: form.nationalId || "",
+                status: "active",
+              };
+              // Debug log to verify submit is firing
+              console.log("Submitting /users/ payload", payload);
+              const res = await fetch(`${API_URL}/users/`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+              });
+              if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || `Create failed: ${res.status}`);
+              }
+              // Optional: read created entity
+              await res.json().catch(() => null);
+              setOpenDialog(false);
+              setForm({ fullName: "", nationalId: "", phone: "", category: "", date: "" });
+              await loadUsers();
+            } catch (err: any) {
+              setError(err?.message || "Failed to create");
+            } finally {
+              setCreating(false);
+            }
+          }}
+        >
+          <Input
+            placeholder="Full Name"
+            value={form.fullName}
+            onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))}
+          />
+          <Input
+            placeholder="National ID"
+            value={form.nationalId}
+            onChange={(e) => setForm((s) => ({ ...s, nationalId: e.target.value }))}
+          />
+          <Input
+            placeholder="Phone Number"
+            value={form.phone}
+            onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
+          />
+          <Select
+            value={form.category}
+            onValueChange={(val) => setForm((s) => ({ ...s, category: val }))}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Select Category" />
             </SelectTrigger>
@@ -223,12 +310,16 @@ export default function ComplaintAppealPage() {
               <SelectItem value="appeal">Appeal</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="date" />
+          <Input
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))}
+          />
           <Button
             type="submit"
             className="w-full bg-blue-600 text-white hover:bg-blue-700"
           >
-            Save
+            {creating ? "Saving..." : "Save"}
           </Button>
         </form>
       </Dialog>
