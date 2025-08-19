@@ -2,8 +2,10 @@
 import { EmailIcon, PasswordIcon } from "@/assets/icons";
 import Link from "next/link";
 import React, { useState } from "react";
-import InputGroup from "../FormElements/InputGroup";
+import InputGroup from "../FormElements/InputGroup/index";
 import { Checkbox } from "../FormElements/checkbox";
+import { useRouter } from "next/navigation";
+import { loginUser } from "@/utils/api";
 
 export default function SigninWithPassword() {
   const [data, setData] = useState({
@@ -13,6 +15,8 @@ export default function SigninWithPassword() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setData({
@@ -21,15 +25,20 @@ export default function SigninWithPassword() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    // You can remove this code block
     setLoading(true);
+    setError("");
 
-    setTimeout(() => {
+    try {
+      const response = await loginUser(data.email, data.password); // call Django API
+      localStorage.setItem("token", response.access); // save JWT
       setLoading(false);
-    }, 1000);
+      router.push("/dashboard"); // redirect after login
+    } catch (err: any) {
+      setLoading(false);
+      setError("Invalid email or password");
+    }
   };
 
   return (
@@ -55,6 +64,8 @@ export default function SigninWithPassword() {
         value={data.password}
         icon={<PasswordIcon />}
       />
+
+       {error && <p className="mb-4 text-red-500">{error}</p>}
 
       <div className="mb-6 flex items-center justify-between gap-2 py-2 font-medium">
         <Checkbox

@@ -27,13 +27,21 @@ def user_login(request):
     if request.method != "POST":
         return Response({"detail": "This view only handles POST requests."}, status=status.HTTP_400_BAD_REQUEST)
 
-    username = request.data.get('username')
+    identifier = request.data.get('username') or request.data.get('email')
     password = request.data.get('password')
-    if not username or not password:
+    if not identifier or not password:
         return Response("Email and/or Password are Incorrect", status=status.HTTP_400_BAD_REQUEST)
 
-    user = authenticate(request, username=username, password=password)
+    # Try authenticating directly as username
+    user = authenticate(request, username=identifier, password=password)
     print(user)
+    # If that fails, try resolving identifier as email to a username
+    if user is None and '@' in identifier:
+        try:
+            resolved_user = User.objects.get(email=identifier)
+            user = authenticate(request, username=resolved_user.username, password=password)
+        except User.DoesNotExist:
+            user = None
     if user is not None:
         login(request, user)
         # Generate JWT token
