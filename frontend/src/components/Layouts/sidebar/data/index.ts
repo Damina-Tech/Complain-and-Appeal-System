@@ -15,20 +15,6 @@ export const NAV_DATA = [
         ],
       },
       {
-        title: "User Management",
-        icon: Icons.User,
-        items: [
-          {
-            title: "User",
-            url: "/",
-          },
-          {
-            title: "Roles",
-            url: "/",
-          },
-        ],
-      },
-      {
         title: "Complaint / Appeal",
         url: "/cases",
         icon: Icons.Calendar,
@@ -41,7 +27,7 @@ export const NAV_DATA = [
         items: [],
       },
       {
-        title: " Office",
+        title: " Office Stats",
         url: "/forms",
         icon: Icons.Alphabet,
         items: [],
