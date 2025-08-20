@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from .serializers import *
 from .models import *
+from django.db import transaction
 
 User = get_user_model()
 
@@ -118,3 +119,59 @@ class OfficeViewSet(viewsets.ModelViewSet):
     queryset = Office.objects.all().order_by("name")
     serializer_class = OfficeSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+class TransferViewSet(viewsets.ModelViewSet):
+    """
+    Creates a transfer and, on success, updates the case.office_id to the destination office.
+    """
+    queryset = Transfer.objects.select_related("case_id", "from_office_id", "to_office_id")
+    serializer_class = TransferSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        transfer = serializer.save()
+        # reflect the office move on the case
+        case = transfer.case_id
+        case.office_id = transfer.to_office_id
+        case.status_changed_by = self.request.user  # optional: who performed the transfer
+        case.save(update_fields=["office_id", "status_changed_by"])
+
+    # Optional quick endpoint to fetch transfers of a case
+    @action(detail=False, methods=["get"], url_path="by-case/(?P<case_pk>[^/.]+)")
+    def by_case(self, request, case_pk=None):
+        qs = self.get_queryset().filter(case_id_id=case_pk)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            ser = self.get_serializer(page, many=True)
+            return self.get_paginated_response(ser.data)
+        ser = self.get_serializer(qs, many=True)
+        return Response(ser.data)
+
+
+class AssignmentViewSet(viewsets.ModelViewSet):
+    """
+    Records a handover between users for a case.
+    If from_user_id not supplied, default to request.user for convenience.
+    """
+    queryset = Assignment.objects.select_related("case_id", "from_user_id", "to_user_id")
+    serializer_class = AssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        from_user = serializer.validated_data.get("from_user_id")
+        if not from_user:
+            # Assume the current actor is handing over the case
+            serializer.validated_data["from_user_id"] = self.request.user
+        serializer.save()
+
+    # Optional quick endpoint to fetch assignments of a case
+    @action(detail=False, methods=["get"], url_path="by-case/(?P<case_pk>[^/.]+)")
+    def by_case(self, request, case_pk=None):
+        qs = self.get_queryset().filter(case_id_id=case_pk)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            ser = self.get_serializer(page, many=True)
+            return self.get_paginated_response(ser.data)
+        ser = self.get_serializer(qs, many=True)
+        return Response(ser.data)

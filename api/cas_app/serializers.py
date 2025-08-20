@@ -101,3 +101,45 @@ class CaseSerializer(serializers.ModelSerializer):
             "deleted_by",
             "last_seen_by",
         ]
+
+class TransferSerializer(serializers.ModelSerializer):
+    # keep *_id naming per your style
+    case_id = serializers.PrimaryKeyRelatedField(queryset=Case.objects.filter(deleted_by__isnull=True))
+    from_office_id = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all())
+    to_office_id = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all())
+
+    class Meta:
+        model = Transfer
+        fields = ["id", "case_id", "from_office_id", "to_office_id", "reason", "timestamp"]
+        read_only_fields = ["timestamp"]
+
+    def validate(self, attrs):
+        case = attrs["case_id"]
+        from_office = attrs["from_office_id"]
+        to_office = attrs["to_office_id"]
+
+        if from_office == to_office:
+            raise serializers.ValidationError("from_office_id and to_office_id cannot be the same.")
+
+        # sanity: current office should match from_office to avoid race/incorrect transfer
+        if case.office_id and case.office_id_id != from_office.id:
+            raise serializers.ValidationError("Case current office does not match from_office_id.")
+        return attrs
+
+
+class AssignmentSerializer(serializers.ModelSerializer):
+    case_id = serializers.PrimaryKeyRelatedField(queryset=Case.objects.filter(deleted_by__isnull=True))
+    from_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    to_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+
+    class Meta:
+        model = Assignment
+        fields = ["id", "case_id", "from_user_id", "to_user_id", "reason", "timestamp"]
+        read_only_fields = ["timestamp"]
+
+    def validate(self, attrs):
+        from_user = attrs.get("from_user_id")
+        to_user = attrs["to_user_id"]
+        if from_user and from_user == to_user:
+            raise serializers.ValidationError("from_user_id and to_user_id cannot be the same.")
+        return attrs

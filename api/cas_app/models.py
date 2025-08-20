@@ -56,6 +56,7 @@ class Case(models.Model):
     channel         = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="web")
     priority        = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    attachments     = models.JSONField(default=list, blank=True)  # list of file URLs or IDs
 
     # Tracking
     created_at          = models.DateTimeField(auto_now_add=True)
@@ -82,3 +83,31 @@ class CaseStatusHistory(models.Model):
 
     def __str__(self):
         return f"Case {self.case_id} -> {self.status} @ {self.changed_at:%Y-%m-%d %H:%M}"
+
+
+class Transfer(models.Model):
+    case_id         = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="transfers")
+    from_office_id  = models.ForeignKey(Office, on_delete=models.PROTECT, related_name="transfers_out")
+    to_office_id    = models.ForeignKey(Office, on_delete=models.PROTECT, related_name="transfers_in")
+    reason          = models.TextField(blank=True)
+    timestamp       = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"Transfer Case#{self.case_id_id} {self.from_office_id} -> {self.to_office_id} @ {self.timestamp:%Y-%m-%d %H:%M}"
+
+
+class Assignment(models.Model):
+    case_id       = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="assignments")
+    from_user_id  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignments_out")
+    to_user_id    = models.ForeignKey(User, on_delete=models.PROTECT, related_name="assignments_in")
+    reason        = models.TextField(blank=True)
+    timestamp     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"Assignment Case#{self.case_id_id} {self.from_user_id} -> {self.to_user_id} @ {self.timestamp:%Y-%m-%d %H:%M}"

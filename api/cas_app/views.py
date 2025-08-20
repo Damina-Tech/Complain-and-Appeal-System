@@ -48,9 +48,10 @@ def user_login(request):
         refresh = RefreshToken.for_user(user)   
         # Create a custom response with the token
         response_data = {
-            'refresh': str(refresh),
             'access': str(refresh.access_token),
+            'refresh': str(refresh),
             'user_id': user.id,
+            'role': user.groups.first().name if user.groups.exists() else 'Citizen',  # Assuming first group is the role
         }
         return Response(response_data, status=status.HTTP_200_OK)
         # # Here, we use our CustomTokenObtainPairSerializer to handle token creation

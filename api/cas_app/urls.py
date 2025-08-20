@@ -3,11 +3,12 @@ from django.urls import path, include
 from .api import *
 from .views import *
 
-
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename="user")
-router.register(r'cases', CaseViewSet, basename='cases')
-router.register(r'offices', OfficeViewSet, basename='offices')
+router.register(r'cases', CaseViewSet, basename='case')
+router.register(r'offices', OfficeViewSet, basename='office')
+router.register(r'transfers', TransferViewSet, basename='transfer')
+router.register(r'assignments', AssignmentViewSet, basename='assignment')
 
 urlpatterns = [
     path("", include(router.urls)),
