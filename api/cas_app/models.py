@@ -50,6 +50,8 @@ class Case(models.Model):
     # Core fields (using *_id names where you asked; category_id kept as string choice)
     citizen_id      = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_reported")
     office_id       = models.ForeignKey(Office, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases")
+    title           = models.CharField(max_length=500, null=True, blank=True)  # optional title for the case
+    description     = models.TextField(null=True, blank=True)  # detailed description of the case
     category_id     = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="complaint")
     channel         = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="web")
     priority        = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
