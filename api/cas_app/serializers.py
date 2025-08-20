@@ -69,13 +69,28 @@ class CaseStatusHistorySerializer(serializers.ModelSerializer):
         model = CaseStatusHistory
         fields = ["id", "status", "changed_at", "changed_by"]
 
+class CaseFeedbackSerializer(serializers.ModelSerializer):
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = CaseFeedback
+        fields = ["id", "case", "created_by", "rating", "comment", "created_at"]
+        read_only_fields = ["id", "created_by", "created_at", "case"]
+
+    def validate_rating(self, value):
+        if not (1 <= value <= 5):
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value
+    
 
 class CaseSerializer(serializers.ModelSerializer):
     # map *_id fields to actual FKs while keeping your requested names
     citizen_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="citizen_id")
     office_id  = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all(), source="office_id", required=False, allow_null=True)
+    parent_case = serializers.PrimaryKeyRelatedField(queryset=Case.objects.all(), required=False, allow_null=True)
 
     status_history = CaseStatusHistorySerializer(many=True, read_only=True)
+    feedbacks      = CaseFeedbackSerializer(many=True, read_only=True)
 
     class Meta:
         model = Case
@@ -83,6 +98,10 @@ class CaseSerializer(serializers.ModelSerializer):
             "id",
             "citizen_id",
             "office_id",
+            "parent_case",
+            "title",
+            "description",
+            "attachments",
             "category_id",   # string choice: complaint|appeal|other
             "channel",       # web|walk_in|phone
             "priority",      # low|medium|high|urgent
@@ -101,6 +120,7 @@ class CaseSerializer(serializers.ModelSerializer):
             "deleted_by",
             "last_seen_by",
         ]
+
 
 class TransferSerializer(serializers.ModelSerializer):
     # keep *_id naming per your style

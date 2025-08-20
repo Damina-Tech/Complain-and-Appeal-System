@@ -48,6 +48,8 @@ class Case(models.Model):
     ]
 
     # Core fields (using *_id names where you asked; category_id kept as string choice)
+    parent_case       = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="child_cases")
+
     citizen_id      = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_reported")
     office_id       = models.ForeignKey(Office, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases")
     title           = models.CharField(max_length=500, null=True, blank=True)  # optional title for the case
@@ -83,6 +85,21 @@ class CaseStatusHistory(models.Model):
 
     def __str__(self):
         return f"Case {self.case_id} -> {self.status} @ {self.changed_at:%Y-%m-%d %H:%M}"
+
+# NEW: one feedback per citizen per case
+class CaseFeedback(models.Model):
+    case        = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="feedbacks")
+    created_by  = models.ForeignKey(User, on_delete=models.CASCADE, related_name="case_feedbacks")
+    rating      = models.PositiveSmallIntegerField()  # 1–5 typical
+    comment     = models.TextField(blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("case", "created_by")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Feedback Case#{self.case_id_id} by {self.created_by_id} ({self.rating})"
 
 
 class Transfer(models.Model):

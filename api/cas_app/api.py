@@ -42,7 +42,7 @@ class CaseViewSet(viewsets.ModelViewSet):
     - status change tracking (history)
     - mark seen
     """
-    queryset = Case.objects.filter(deleted_by__isnull=True).select_related("citizen_id", "office_id", "added_by", "status_changed_by", "last_seen_by")
+    queryset = Case.objects.filter(deleted_by__isnull=True).select_related("citizen_id", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case")
     serializer_class = CaseSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -113,6 +113,95 @@ class CaseViewSet(viewsets.ModelViewSet):
         instance.last_seen_by = request.user
         instance.save(update_fields=["last_seen_by"])
         return Response({"message": "Marked as seen."}, status=200)
+    
+     # ---------- NEW: FEEDBACK ----------
+    @action(detail=True, methods=["post"])
+    def submit_feedback(self, request, pk=None):
+        """
+        Citizen submits feedback only if the case is 'closed'.
+        Payload: { "rating": 5, "comment": "thanks" }
+        """
+        case = self.get_object()
+
+        # Guard: only the citizen who reported the case can give feedback
+        if case.citizen_id_id != request.user.id:
+            return Response({"detail": "Only the case owner can submit feedback."}, status=403)
+
+        if case.status != "closed":
+            return Response({"detail": "Feedback can only be submitted after the case is Closed."}, status=400)
+
+        ser = CaseFeedbackSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        # One feedback per citizen per case (enforced in model); handle duplicate gracefully
+        try:
+            feedback = CaseFeedback.objects.create(
+                case=case,
+                created_by=request.user,
+                rating=ser.validated_data["rating"],
+                comment=ser.validated_data.get("comment", "")
+            )
+        except Exception:
+            return Response({"detail": "Feedback already submitted for this case by this user."}, status=400)
+
+        # (Optional) record a status history echo to show "closed (feedback)"
+        CaseStatusHistory.objects.create(case=case, status=case.status, changed_by=request.user)
+
+        return Response(CaseFeedbackSerializer(feedback).data, status=201)
+
+    # ---------- NEW: APPEAL ----------
+    @transaction.atomic
+    @action(detail=True, methods=["post"])
+    def submit_appeal(self, request, pk=None):
+        """
+        Citizen submits an appeal only if the base case is 'closed'.
+        Payload (optional): { "to_office_id": 5, "reason": "Not satisfied" }
+        Behavior:
+          - Creates a NEW Case with category='appeal', parent_case=<this case>, status='pending'
+          - Copies citizen, assigns office (same as original or provided to_office_id)
+          - Writes initial status history for the new appeal case
+        """
+        base_case = self.get_object()
+
+        # Guard: only owner can appeal
+        if base_case.citizen_id_id != request.user.id:
+            return Response({"detail": "Only the case owner can submit an appeal."}, status=403)
+
+        if base_case.status != "closed":
+            return Response({"detail": "Appeal can only be submitted after the case is Closed."}, status=400)
+
+        to_office_id = request.data.get("to_office_id")
+        reason = request.data.get("reason", "")
+
+        # Choose target office: provided one or keep same as base
+        target_office = base_case.office_id
+        if to_office_id:
+            from .models import Office
+            try:
+                target_office = Office.objects.get(pk=to_office_id)
+            except Office.DoesNotExist:
+                return Response({"detail": "to_office_id not found."}, status=400)
+
+        # Create child appeal case
+        appeal_case = Case.objects.create(
+            parent_case=base_case,
+            citizen_id=base_case.citizen_id,
+            office_id=target_office,
+            category_id="appeal",
+            channel="web",
+            priority=base_case.priority,  # or default 'medium'
+            status="pending",
+            added_by=request.user,         # actor initiating appeal
+        )
+        CaseStatusHistory.objects.create(case=appeal_case, status="pending", changed_by=request.user)
+
+        # (Optional) you might want to add a “note” somewhere; simplest is to add a feedback comment as evidence log, or
+        # store reason in a separate "CaseNote" model if you plan to have notes. For now we can reuse feedback as an audit:
+        if reason:
+            CaseFeedback.objects.create(case=appeal_case, created_by=request.user, rating=5, comment=f"[Appeal Reason] {reason}")
+
+        data = self.get_serializer(appeal_case).data
+        return Response(data, status=201)
 
 
 class OfficeViewSet(viewsets.ModelViewSet):
