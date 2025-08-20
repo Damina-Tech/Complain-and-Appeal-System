@@ -34,7 +34,7 @@ export default function SigninWithPassword() {
       const response = await loginUser(data.email, data.password); // call Django API
       localStorage.setItem("token", response.access); // save JWT
       setLoading(false);
-      router.push("/"); // redirect after login
+      router.push("/dashboard"); // redirect after login
     } catch (err: any) {
       setLoading(false);
       setError("Invalid email or password");

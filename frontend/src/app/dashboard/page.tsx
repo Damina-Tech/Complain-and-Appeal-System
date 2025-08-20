@@ -5,10 +5,10 @@ import { TopChannels } from "@/components/Tables/top-channels";
 import { TopChannelsSkeleton } from "@/components/Tables/top-channels/skeleton";
 import { createTimeFrameExtractor } from "@/utils/timeframe-extractor";
 import { Suspense } from "react";
-import { ChatsCard } from "./_components/chats-card";
-import { OverviewCardsGroup } from "./_components/overview-cards";
-import { OverviewCardsSkeleton } from "./_components/overview-cards/skeleton";
-import { RegionLabels } from "./_components/region-labels";
+import { ChatsCard } from "@/app/(home)/_components/chats-card";
+import { OverviewCardsGroup } from "@/app/(home)/_components/overview-cards";
+import { OverviewCardsSkeleton } from "@/app/(home)/_components/overview-cards/skeleton";
+import { RegionLabels } from "@/app/(home)/_components/region-labels";
 
 type PropsType = {
   searchParams: Promise<{
@@ -16,7 +16,7 @@ type PropsType = {
   }>;
 };
 
-export default async function Home({ searchParams }: PropsType) {
+export default async function DashboardPage({ searchParams }: PropsType) {
   const { selected_time_frame } = await searchParams;
   const extractTimeFrame = createTimeFrameExtractor(selected_time_frame);
 

@@ -9,8 +9,10 @@ import { Header } from "./Layouts/header";
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const isAuthRoute = pathname?.startsWith("/auth");
+	const publicRoutes = new Set(["/", "/about", "/services", "/contact"]);
+	const isPublicRoute = pathname ? publicRoutes.has(pathname) : false;
 
-	if (isAuthRoute) {
+	if (isAuthRoute || isPublicRoute) {
 		return <>{children}</>;
 	}
 
