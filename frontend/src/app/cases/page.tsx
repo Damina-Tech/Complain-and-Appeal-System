@@ -24,7 +24,7 @@ import Dialog from "@/components/ui/Dialog";
 import { Eye, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// ✅ Status Color Mapping
+// ✅ Status Color Mapping (Title Case)
 const statusColors: Record<string, string> = {
   Pending: "bg-gray-200 text-gray-800",
   "In Investigation": "bg-blue-200 text-blue-800",
@@ -50,38 +50,43 @@ export default function ComplaintAppealPage() {
   });
   const [data, setData] = useState<Array<{
     id: number | string;
-    name: string;
-    nationalId: string;
-    phone: string;
+    title: string;
     category: string;
+    channel: string;
+    priority: string;
     date: string; // YYYY-MM-DD
-    status: string;
+    status: string; // Title Case for badge mapping
   }>>([]);
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
 
-  const loadUsers = async () => {
+  const loadCases = async () => {
     if (!API_URL) return;
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
     if (!token) return;
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`${API_URL}/users/`, {
+      const res = await fetch(`${API_URL}/cases/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         throw new Error(`Failed to load: ${res.status}`);
       }
-      const users = await res.json();
-      const mapped = (Array.isArray(users) ? users : []).map((u: any) => ({
-        id: u.id,
-        name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "",
-        nationalId: u.national_id || "",
-        phone: u.phone_number || "",
-        category: "complaint",
-        date: (u.created_at ? String(u.created_at).slice(0, 10) : "").replace(/T.*/, ""),
-        status: u.status || "Pending",
+      const cases = await res.json();
+      const mineOnly = (Array.isArray(cases) ? cases : []).filter((c: any) => {
+        if (!userId) return true; // fallback if not present
+        return String(c.citizen_id) === String(userId);
+      });
+      const mapped = mineOnly.map((c: any) => ({
+        id: c.id,
+        title: c.title || `Case #${c.id}`,
+        category: c.category_id || "complaint",
+        channel: c.channel || "web",
+        priority: c.priority || "medium",
+        date: (c.created_at ? String(c.created_at).slice(0, 10) : "").replace(/T.*/, ""),
+        status: (c.status || "pending").replace(/\b\w/g, (m: string) => m.toUpperCase()),
       }));
       setData(mapped);
     } catch (e: any) {
@@ -91,18 +96,15 @@ export default function ComplaintAppealPage() {
     }
   };
 
-  // Fetch real data from Django `/api/users/` and map to table shape
+  // Fetch cases from Django `/api/cases/` and map to table shape
   useEffect(() => {
-    loadUsers();
+    loadCases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredData = data.filter((item) => {
     const matchCategory = category === "all" || item.category === category;
-    const matchSearch =
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.nationalId.includes(search) ||
-      item.phone.includes(search);
+    const matchSearch = item.title.toLowerCase().includes(search.toLowerCase());
     const matchDate = !date || item.date === date.toISOString().split("T")[0];
     return matchCategory && matchSearch && matchDate;
   });
@@ -150,11 +152,11 @@ export default function ComplaintAppealPage() {
         <Table>
           <TableHeader>
             <TableRow className="[&>th]:text-center">
-              <TableHead className="!text-left">Name</TableHead>
-              <TableHead>National ID</TableHead>
-              <TableHead>Phone</TableHead>
+              <TableHead className="!text-left">Title</TableHead>
               <TableHead>Category</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead>Channel</TableHead>
+              <TableHead>Priority</TableHead>
+              <TableHead>Created</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Action</TableHead>
             </TableRow>
@@ -180,10 +182,10 @@ export default function ComplaintAppealPage() {
                   key={item.id}
                   className="text-center text-base font-medium text-dark dark:text-white"
                 >
-                  <TableCell className="!text-left">{item.name}</TableCell>
-                  <TableCell>{item.nationalId}</TableCell>
-                  <TableCell>{item.phone}</TableCell>
+                  <TableCell className="!text-left">{item.title}</TableCell>
                   <TableCell className="capitalize">{item.category}</TableCell>
+                  <TableCell className="capitalize">{item.channel}</TableCell>
+                  <TableCell className="capitalize">{item.priority}</TableCell>
                   <TableCell>{item.date}</TableCell>
                   <TableCell>
                     <span
@@ -258,14 +260,19 @@ export default function ComplaintAppealPage() {
                 status: "active",
               };
               // Debug log to verify submit is firing
-              console.log("Submitting /users/ payload", payload);
-              const res = await fetch(`${API_URL}/users/`, {
+              console.log("Submitting /cases/ payload", payload);
+              const res = await fetch(`${API_URL}/cases/`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({
+                  title: form.fullName || `New Case ${Date.now()}`,
+                  description: form.nationalId || "",
+                  category_id: form.category || "complaint",
+                  // citizen_id omitted; backend will default to current user
+                }),
               });
               if (!res.ok) {
                 const msg = await res.text();
@@ -275,7 +282,7 @@ export default function ComplaintAppealPage() {
               await res.json().catch(() => null);
               setOpenDialog(false);
               setForm({ fullName: "", nationalId: "", phone: "", category: "", date: "" });
-              await loadUsers();
+              await loadCases();
             } catch (err: any) {
               setError(err?.message || "Failed to create");
             } finally {
