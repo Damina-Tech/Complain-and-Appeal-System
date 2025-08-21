@@ -85,8 +85,8 @@ class CaseFeedbackSerializer(serializers.ModelSerializer):
 
 class CaseSerializer(serializers.ModelSerializer):
     # map *_id fields to actual FKs while keeping your requested names
-    citizen_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="citizen_id")
-    office_id  = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all(), source="office_id", required=False, allow_null=True)
+    citizen_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    office_id  = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all(), required=False, allow_null=True)
     parent_case = serializers.PrimaryKeyRelatedField(queryset=Case.objects.all(), required=False, allow_null=True)
 
     status_history = CaseStatusHistorySerializer(many=True, read_only=True)
@@ -112,6 +112,7 @@ class CaseSerializer(serializers.ModelSerializer):
             "deleted_by",
             "last_seen_by",
             "status_history",
+            "feedbacks"
         ]
         read_only_fields = [
             "created_at",
