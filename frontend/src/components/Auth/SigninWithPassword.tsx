@@ -37,6 +37,9 @@ export default function SigninWithPassword() {
       if (response.role) {
         localStorage.setItem("role", response.role);
       }
+      if (response.user_id) {
+        localStorage.setItem("user_id", String(response.user_id));
+      }
       setLoading(false);
       const role = (response.role || "").toString();
       router.push(defaultRouteForRole(role));
