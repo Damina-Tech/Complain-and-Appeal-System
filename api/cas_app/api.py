@@ -35,23 +35,124 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return User.objects.exclude(status="deleted")
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.db import transaction
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from rest_framework.permissions import BasePermission, SAFE_METHODS
+
+from .models import Case, CaseStatusHistory, Office, CaseFeedback
+from .serializers import CaseSerializer, CaseFeedbackSerializer
+
+User = get_user_model()
+
+
+def is_citizen(user: User) -> bool:
+    return user.groups.filter(name="Citizen").exists()
+
+
+class CaseAccessPermission(BasePermission):
+    """
+    - Citizens: can list/retrieve ONLY their cases; can create only for themselves;
+                can submit_feedback / submit_appeal on their own case;
+                cannot update/destroy/change_status.
+    - Staff/Admins (non-citizen or superuser): full access.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        # Citizens:
+        if is_citizen(user):
+            # Allowed view actions for citizens
+            allowed_actions = {"list", "retrieve", "create", "submit_feedback", "submit_appeal", "mark_seen"}
+            # .action is set for actions; for plain methods (list/create/retrieve/update) DRF sets accordingly
+            action = getattr(view, "action", None)
+            if action in allowed_actions:
+                return True
+            # For plain HTTP methods without action resolution (rare), allow only safe reads
+            if request.method in SAFE_METHODS:
+                return True
+            return False
+
+        # Staff / admins
+        return True
+
+    def has_object_permission(self, request, view, obj: Case):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        # Staff/admins: full object access
+        if not is_citizen(user) or user.is_superuser:
+            return True
+
+        # Citizens: object must belong to them
+        is_owner = (obj.citizen_id_id == user.id)
+
+        # Citizens can view their own objects
+        if request.method in SAFE_METHODS and is_owner:
+            return True
+
+        action = getattr(view, "action", None)
+
+        # Citizens may retrieve their own case
+        if action == "retrieve" and is_owner:
+            return True
+
+        # Citizens may mark_seen / submit_feedback / submit_appeal on their own case
+        if action in {"mark_seen", "submit_feedback", "submit_appeal"} and is_owner:
+            return True
+
+        # Citizens may create (object-level doesn’t apply yet), updates/deletes not allowed
+        if action == "create":
+            return True
+
+        # Otherwise deny
+        return False
+
+
 class CaseViewSet(viewsets.ModelViewSet):
     """
     CRUD for Case with:
+    - citizen scoping (citizens only see their cases)
     - soft delete
     - status change tracking (history)
     - mark seen
+    - feedback & appeal (citizen-owned only)
     """
-    queryset = Case.objects.filter(deleted_by__isnull=True).select_related("citizen_id", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case")
+    queryset = (
+        Case.objects
+        .filter(deleted_by__isnull=True)
+        .select_related("citizen_id", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case")
+    )
     serializer_class = CaseSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, CaseAccessPermission]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+
+        # Citizens only see their own cases
+        if is_citizen(user):
+            return qs.filter(citizen_id=user)
+
+        # Staff/admins see all (already filtered by deleted_by__isnull)
+        return qs
 
     def perform_create(self, serializer):
-        # If citizen_id not provided, default to the current user (external self-report)
-        citizen = serializer.validated_data.get("citizen_id") or self.request.user
-        case = serializer.save(added_by=self.request.user, citizen_id=citizen)
+        # If the creator is a citizen, force the case owner to be themselves
+        if is_citizen(self.request.user):
+            case = serializer.save(added_by=self.request.user, citizen_id=self.request.user)
+        else:
+            # Staff/internal can create for any citizen; if citizen_id missing, default to current user
+            citizen = serializer.validated_data.get("citizen_id") or self.request.user
+            case = serializer.save(added_by=self.request.user, citizen_id=citizen)
 
-        # initial status history
         CaseStatusHistory.objects.create(
             case=case,
             status=case.status,
@@ -61,9 +162,13 @@ class CaseViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """Ensure status change is tracked with history + status_changed_by."""
         partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        previous_status = instance.status
+        instance = self.get_object()  # object permission checked
 
+        # Citizens are blocked by CaseAccessPermission.has_permission(), but keep defensive check:
+        if is_citizen(request.user):
+            return Response({"detail": "Not permitted."}, status=403)
+
+        previous_status = instance.status
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
@@ -83,15 +188,18 @@ class CaseViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
-        # Soft delete
-        instance = self.get_object()
+        instance = self.get_object()  # object permission checked
+        # Citizens are blocked by permission class; staff proceed:
         instance.deleted_by = request.user
         instance.save(update_fields=["deleted_by"])
         return Response({"message": "Case marked as deleted."}, status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"])
     def change_status(self, request, pk=None):
-        """POST { 'status': 'resolved' }  -> updates status + records history"""
+        """POST { 'status': 'resolved' } -> updates status + records history (staff only)."""
+        if is_citizen(request.user):
+            return Response({"detail": "Not permitted."}, status=403)
+
         instance = self.get_object()
         new_status = request.data.get("status")
         valid = dict(Case.STATUS_CHOICES).keys()
@@ -108,32 +216,23 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def mark_seen(self, request, pk=None):
-        """Mark this case as last seen by the current user."""
-        instance = self.get_object()
+        instance = self.get_object()  # object permission checked
         instance.last_seen_by = request.user
         instance.save(update_fields=["last_seen_by"])
         return Response({"message": "Marked as seen."}, status=200)
-    
-     # ---------- NEW: FEEDBACK ----------
+
     @action(detail=True, methods=["post"])
     def submit_feedback(self, request, pk=None):
-        """
-        Citizen submits feedback only if the case is 'closed'.
-        Payload: { "rating": 5, "comment": "thanks" }
-        """
-        case = self.get_object()
-
-        # Guard: only the citizen who reported the case can give feedback
+        case = self.get_object()  # object permission checked
         if case.citizen_id_id != request.user.id:
             return Response({"detail": "Only the case owner can submit feedback."}, status=403)
-
         if case.status != "closed":
             return Response({"detail": "Feedback can only be submitted after the case is Closed."}, status=400)
 
         ser = CaseFeedbackSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
-        # One feedback per citizen per case (enforced in model); handle duplicate gracefully
+        from django.db import IntegrityError
         try:
             feedback = CaseFeedback.objects.create(
                 case=case,
@@ -141,67 +240,47 @@ class CaseViewSet(viewsets.ModelViewSet):
                 rating=ser.validated_data["rating"],
                 comment=ser.validated_data.get("comment", "")
             )
-        except Exception:
+        except IntegrityError:
             return Response({"detail": "Feedback already submitted for this case by this user."}, status=400)
 
-        # (Optional) record a status history echo to show "closed (feedback)"
         CaseStatusHistory.objects.create(case=case, status=case.status, changed_by=request.user)
-
         return Response(CaseFeedbackSerializer(feedback).data, status=201)
 
-    # ---------- NEW: APPEAL ----------
     @transaction.atomic
     @action(detail=True, methods=["post"])
     def submit_appeal(self, request, pk=None):
-        """
-        Citizen submits an appeal only if the base case is 'closed'.
-        Payload (optional): { "to_office_id": 5, "reason": "Not satisfied" }
-        Behavior:
-          - Creates a NEW Case with category='appeal', parent_case=<this case>, status='pending'
-          - Copies citizen, assigns office (same as original or provided to_office_id)
-          - Writes initial status history for the new appeal case
-        """
-        base_case = self.get_object()
-
-        # Guard: only owner can appeal
+        base_case = self.get_object()  # object permission checked
         if base_case.citizen_id_id != request.user.id:
             return Response({"detail": "Only the case owner can submit an appeal."}, status=403)
-
         if base_case.status != "closed":
             return Response({"detail": "Appeal can only be submitted after the case is Closed."}, status=400)
 
         to_office_id = request.data.get("to_office_id")
         reason = request.data.get("reason", "")
 
-        # Choose target office: provided one or keep same as base
         target_office = base_case.office_id
         if to_office_id:
-            from .models import Office
             try:
                 target_office = Office.objects.get(pk=to_office_id)
             except Office.DoesNotExist:
                 return Response({"detail": "to_office_id not found."}, status=400)
 
-        # Create child appeal case
         appeal_case = Case.objects.create(
             parent_case=base_case,
             citizen_id=base_case.citizen_id,
             office_id=target_office,
             category_id="appeal",
             channel="web",
-            priority=base_case.priority,  # or default 'medium'
+            priority=base_case.priority,
             status="pending",
-            added_by=request.user,         # actor initiating appeal
+            added_by=request.user,
         )
         CaseStatusHistory.objects.create(case=appeal_case, status="pending", changed_by=request.user)
 
-        # (Optional) you might want to add a “note” somewhere; simplest is to add a feedback comment as evidence log, or
-        # store reason in a separate "CaseNote" model if you plan to have notes. For now we can reuse feedback as an audit:
         if reason:
             CaseFeedback.objects.create(case=appeal_case, created_by=request.user, rating=5, comment=f"[Appeal Reason] {reason}")
 
-        data = self.get_serializer(appeal_case).data
-        return Response(data, status=201)
+        return Response(self.get_serializer(appeal_case).data, status=201)
 
 
 class OfficeViewSet(viewsets.ModelViewSet):
