@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NAV_DATA } from "./data";
+import { defaultRouteForRole, slugFromRole } from "@/lib/role";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
 import { MenuItem } from "./menu-item";
 import { useSidebarContext } from "./sidebar-context";
@@ -41,6 +42,21 @@ export function Sidebar() {
       });
     });
   }, [pathname]);
+
+  // Role from localStorage (client-only)
+  const role =
+    typeof window !== "undefined"
+      ? (localStorage.getItem("role") || "").toString()
+      : "";
+
+  // slugFromRole now imported from lib/role
+
+  const filterByRole = (
+    items: Array<{ allowedRoles?: string[] } & Record<string, any>>,
+  ) =>
+    items.filter(
+      (it) => !it.allowedRoles || (role && it.allowedRoles.includes(role)),
+    );
 
   return (
     <>
@@ -95,13 +111,14 @@ export function Sidebar() {
 
                 <nav role="navigation" aria-label={section.label}>
                   <ul className="space-y-2">
-                    {section.items.map((item) => (
+                    {filterByRole(section.items).map((item) => (
                       <li key={item.title}>
                         {item.items.length ? (
                           <div>
                             <MenuItem
                               isActive={item.items.some(
-                                ({ url }) => url === pathname,
+                                (subItem: { url?: string }) =>
+                                  subItem.url === pathname,
                               )}
                               onClick={() => toggleExpanded(item.title)}
                             >
@@ -127,11 +144,15 @@ export function Sidebar() {
                                 className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
                                 role="menu"
                               >
-                                {item.items.map((subItem) => (
+                                {filterByRole(item.items).map((subItem) => (
                                   <li key={subItem.title} role="none">
                                     <MenuItem
                                       as="link"
-                                      href={subItem.url}
+                                      href={
+                                        subItem.url === "/dashboard" && role
+                                          ? defaultRouteForRole(role)
+                                          : subItem.url
+                                      }
                                       isActive={pathname === subItem.url}
                                     >
                                       <span>{subItem.title}</span>
@@ -148,12 +169,16 @@ export function Sidebar() {
                                 ? item.url + ""
                                 : "/" +
                                   item.title.toLowerCase().split(" ").join("-");
+                            const finalHref =
+                              href === "/dashboard" && role
+                                ? defaultRouteForRole(role)
+                                : href;
 
                             return (
                               <MenuItem
                                 className="flex items-center gap-3 py-3"
                                 as="link"
-                                href={href}
+                                href={finalHref}
                                 isActive={pathname === href}
                               >
                                 <item.icon

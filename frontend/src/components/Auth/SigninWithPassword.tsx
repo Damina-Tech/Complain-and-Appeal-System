@@ -6,6 +6,7 @@ import InputGroup from "../FormElements/InputGroup/index";
 import { Checkbox } from "../FormElements/checkbox";
 import { useRouter } from "next/navigation";
 import { loginUser } from "@/utils/api";
+import { defaultRouteForRole } from "@/lib/role";
 
 export default function SigninWithPassword() {
   const [data, setData] = useState({
@@ -38,11 +39,7 @@ export default function SigninWithPassword() {
       }
       setLoading(false);
       const role = (response.role || "").toString();
-      const slug = role
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "");
-      router.push(slug ? `/dashboard/${slug}` : "/dashboard"); // redirect after login
+      router.push(defaultRouteForRole(role));
     } catch (err: any) {
       setLoading(false);
       setError("Invalid email or password");
