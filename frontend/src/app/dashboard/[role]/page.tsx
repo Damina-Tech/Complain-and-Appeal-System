@@ -9,6 +9,7 @@ import { OverviewCardsSkeleton } from "@/app/(home)/_components/overview-cards/s
 import { ChatsCard } from "@/app/(home)/_components/chats-card";
 import { RegionLabels } from "@/app/(home)/_components/region-labels";
 import { createTimeFrameExtractor } from "@/utils/timeframe-extractor";
+import { redirect } from "next/navigation";
 
 type PropsType = {
   params: Promise<{ role: string }>;
@@ -25,6 +26,11 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
   const extract = createTimeFrameExtractor(selected_time_frame);
 
   const roleTitle = toTitleCase(role);
+
+  // If citizen role hits dashboard route, redirect to default route (/cases)
+  if (/citizen/i.test(role)) {
+    redirect("/cases");
+  }
 
   // Simple role-based section toggles (customize as needed)
   const isCitizen = /citizen/i.test(role);
