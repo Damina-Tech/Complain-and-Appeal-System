@@ -23,6 +23,9 @@ import {
 import Dialog from "@/components/ui/Dialog";
 import { Eye, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { TextAreaGroup } from "@/components/FormElements/InputGroup/text-area";
+
+type Attachment = { name: string; type: string; size: number; data: string };
 
 // ✅ Status Color Mapping (Title Case)
 const statusColors: Record<string, string> = {
@@ -41,12 +44,22 @@ export default function ComplaintAppealPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [creating, setCreating] = useState<boolean>(false);
-  const [form, setForm] = useState({
-    fullName: "",
-    nationalId: "",
-    phone: "",
+  const [form, setForm] = useState<{
+    title: string;
+    description: string;
+    category: string;
+    attachments: Attachment[];
+    status: string;
+    office: string;
+    citizenId: string | null;
+  }>({
+    title: "",
+    description: "",
     category: "",
-    date: "",
+    attachments: [],
+    status: "pending",
+    office: "",
+    citizenId: typeof window !== "undefined" ? localStorage.getItem("user_id") : null,
   });
   const [data, setData] = useState<Array<{
     id: number | string;
@@ -108,6 +121,39 @@ export default function ComplaintAppealPage() {
     const matchDate = !date || item.date === date.toISOString().split("T")[0];
     return matchCategory && matchSearch && matchDate;
   });
+
+  const handleFilesSelected = async (fileList: FileList | null) => {
+    if (!fileList) {
+      setForm((s) => ({ ...s, attachments: [] }));
+      return;
+    }
+    const files = Array.from(fileList);
+    const allowed = [
+      "application/pdf",
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+    ];
+    const selected = files.filter((f) => allowed.includes(f.type));
+    const toBase64 = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+    const attachments: Attachment[] = await Promise.all(
+      selected.map(async (f) => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        data: await toBase64(f),
+      })),
+    );
+
+    setForm((s) => ({ ...s, attachments }));
+  };
 
   return (
     <>
@@ -250,14 +296,14 @@ export default function ComplaintAppealPage() {
             try {
               setCreating(true);
               // Derive a minimal valid Django user payload from the form
-              const [first, ...rest] = form.fullName.trim().split(" ");
               const payload: any = {
-                username: form.nationalId || form.phone || (first ? first.toLowerCase() : `user_${Date.now()}`),
-                first_name: first || "",
-                last_name: rest.join(" ") || "",
-                phone_number: form.phone || "",
-                national_id: form.nationalId || "",
-                status: "active",
+                title: form.title || `New Case ${Date.now()}`,
+                description: form.description || "",
+                category_id: form.category || "complaint",
+                attachments: form.attachments || [],
+                status: form.status || "pending",
+                office: form.office || "",
+                citizen_id: form.citizenId || "",
               };
               // Debug log to verify submit is firing
               console.log("Submitting /cases/ payload", payload);
@@ -268,10 +314,13 @@ export default function ComplaintAppealPage() {
                   Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                  title: form.fullName || `New Case ${Date.now()}`,
-                  description: form.nationalId || "",
+                  title: form.title || `New Case ${Date.now()}`,
+                  description: form.description || "",
                   category_id: form.category || "complaint",
-                  // citizen_id omitted; backend will default to current user
+                  attachments: form.attachments || [],
+                  status: form.status || "pending",
+                  office: form.office || "",
+                  citizen_id: form.citizenId || "",
                 }),
               });
               if (!res.ok) {
@@ -281,7 +330,7 @@ export default function ComplaintAppealPage() {
               // Optional: read created entity
               await res.json().catch(() => null);
               setOpenDialog(false);
-              setForm({ fullName: "", nationalId: "", phone: "", category: "", date: "" });
+              setForm({ title: "", description: "", category: "", attachments: [], status: "pending", office: "", citizenId: typeof window !== "undefined" ? localStorage.getItem("user_id") : null });
               await loadCases();
             } catch (err: any) {
               setError(err?.message || "Failed to create");
@@ -291,20 +340,23 @@ export default function ComplaintAppealPage() {
           }}
         >
           <Input
-            placeholder="Full Name"
-            value={form.fullName}
-            onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))}
+            placeholder="Title"
+            value={form.title}
+            onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))}
           />
-          <Input
-            placeholder="National ID"
-            value={form.nationalId}
-            onChange={(e) => setForm((s) => ({ ...s, nationalId: e.target.value }))}
+          <TextAreaGroup
+            name="description"
+            label="Description"
+            rows={4}
+            placeholder="Description"
+            value={form.description}
+            onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))}
           />
-          <Input
-            placeholder="Phone Number"
-            value={form.phone}
-            onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
-          />
+          {/* <Input
+            placeholder="Attachments"
+            value={form.attachments}
+            onChange={(e) => setForm((s) => ({ ...s, attachments: [...s.attachments, e.target.value] }))}
+          /> */}
           <Select
             value={form.category}
             onValueChange={(val) => setForm((s) => ({ ...s, category: val }))}
@@ -317,11 +369,25 @@ export default function ComplaintAppealPage() {
               <SelectItem value="appeal">Appeal</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            type="date"
-            value={form.date}
-            onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))}
-          />
+          <div>
+            <label className="mb-1 block text-sm font-medium">Attachments (PDF, PNG, JPG)</label>
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/jpg"
+              multiple
+              onChange={(e) => handleFilesSelected(e.target.files)}
+              className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+            />
+            {Array.isArray(form.attachments) && form.attachments.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-sm text-gray-600 dark:text-dark-6">
+                {(form.attachments as any[]).map((a: any) => (
+                  <li key={a.name}>
+                    {a.name} {a.size ? `(${Math.round(a.size / 1024)} KB)` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <Button
             type="submit"
             className="w-full bg-blue-600 text-white hover:bg-blue-700"
