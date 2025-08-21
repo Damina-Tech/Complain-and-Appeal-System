@@ -33,8 +33,16 @@ export default function SigninWithPassword() {
     try {
       const response = await loginUser(data.email, data.password); // call Django API
       localStorage.setItem("token", response.access); // save JWT
+      if (response.role) {
+        localStorage.setItem("role", response.role);
+      }
       setLoading(false);
-      router.push("/dashboard"); // redirect after login
+      const role = (response.role || "").toString();
+      const slug = role
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+      router.push(slug ? `/dashboard/${slug}` : "/dashboard"); // redirect after login
     } catch (err: any) {
       setLoading(false);
       setError("Invalid email or password");

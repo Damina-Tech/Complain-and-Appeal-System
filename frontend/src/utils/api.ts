@@ -8,6 +8,7 @@ export const loginUser = async (username: string, password: string) => {
       username,
       password,
     });
+    console.log("Login successful", response.data);
     return response.data; // contains JWT token
   } catch (error: any) {
     console.error(error.response?.data || error.message);
