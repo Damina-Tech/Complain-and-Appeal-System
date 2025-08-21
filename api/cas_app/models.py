@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 class User(AbstractUser):
     national_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True) 
+    address = models.TextField(null=True, blank=True)  # Optional address field
     last_seen = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, default='active')  # e.g
     deleted_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_users')

@@ -5,48 +5,69 @@ from rest_framework.decorators import action
 from .serializers import *
 from .models import *
 from django.db import transaction
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 User = get_user_model()
+
+class IsSelfOrStaff(permissions.BasePermission):
+    """Allow users to see/update themselves; staff can access anyone."""
+    def has_object_permission(self, request, view, obj):
+        if request.user and request.user.is_authenticated and request.user.is_staff:
+            return True
+        return request.user.is_authenticated and obj.pk == request.user.pk
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("-id")
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]  
+    # default; we’ll override per-action in get_permissions()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ["create"]:               # self-registration
+            return [permissions.AllowAny()]
+        if self.action in ["retrieve", "partial_update", "update"]:
+            return [permissions.IsAuthenticated(), IsSelfOrStaff()]
+        if self.action in ["list", "destroy"]:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        # Staff/admins can list; others can only see self (handled by permissions above).
+        if self.request.user.is_authenticated and self.request.user.is_staff:
+            return super().get_queryset().exclude(status="deleted")
+        # Non-staff: queryset is limited to self to avoid leaking existence via list.
+        return User.objects.filter(pk=self.request.user.pk).exclude(status="deleted")
 
     def perform_create(self, serializer):
-        user = serializer.save(added_by=self.request.user)
-        if serializer.validated_data.get("password"):
-            user.set_password(serializer.validated_data["password"])
-            user.save()
+        # For self-registration, request.user may be Anonymous; added_by stays None.
+        user = serializer.save(added_by=self.request.user if self.request.user.is_authenticated else None)
+
+        # Hash password if provided
+        pwd = serializer.validated_data.get("password")
+        if pwd:
+            user.set_password(pwd)
+            user.save(update_fields=["password"])
+
+        # Put every newly registered user into 'Citizen' by default
+        citizen_group, _ = Group.objects.get_or_create(name="Citizen")
+        user.groups.add(citizen_group)
 
     def perform_update(self, serializer):
+        # Only self or staff gets here (checked by IsSelfOrStaff)
         user = serializer.save(status_changed_by=self.request.user)
-        if serializer.validated_data.get("password"):
-            user.set_password(serializer.validated_data["password"])
-            user.save()
+        pwd = serializer.validated_data.get("password")
+        if pwd:
+            user.set_password(pwd)
+            user.save(update_fields=["password"])
 
     def destroy(self, request, *args, **kwargs):
+        # Only admins can destroy (permission enforced in get_permissions)
         instance = self.get_object()
         instance.deleted_by = request.user
         instance.status = "deleted"
-        instance.save()
+        instance.save(update_fields=["deleted_by", "status"])
         return Response({"message": "User marked as deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
-
-    def get_queryset(self):
-        return User.objects.exclude(status="deleted")
-
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-from django.db import transaction
-from rest_framework import viewsets, permissions, status
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from rest_framework.permissions import BasePermission, SAFE_METHODS
-
-from .models import Case, CaseStatusHistory, Office, CaseFeedback
-from .serializers import CaseSerializer, CaseFeedbackSerializer
-
-User = get_user_model()
 
 
 def is_citizen(user: User) -> bool:
