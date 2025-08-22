@@ -23,6 +23,7 @@ import {
 import Dialog from "@/components/ui/Dialog";
 import { Eye, Pencil, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { listUsers } from "@/services/users";
 
 // Types
 type UserRow = {
@@ -98,54 +99,57 @@ export default function UsersPage() {
 
   // Load roles (groups) & users
   useEffect(() => {
-    const run = async () => {
-      if (!API_URL || !token) return;
-      try {
-        setLoading(true);
-        setError("");
+    // const run = async () => {
+    //   if (!API_URL || !token) return;
+    //   try {
+    //     setLoading(true);
+    //     setError("");
 
-        // Load roles/groups (optional endpoint; adjust if different)
-        const gr = await fetch(`${API_URL}/groups/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (gr.ok) {
-          const gjson = await gr.json();
-          const names =
-            Array.isArray(gjson) ? gjson.map((g: any) => g?.name).filter(Boolean) : [];
-          setRoles(names);
-        } else {
-          // Non-fatal: keep roles empty if endpoint not present
-          setRoles([]);
-        }
+    //     // Load roles/groups (optional endpoint; adjust if different)
+    //     const gr = await fetch(`${API_URL}/groups/`, {
+    //       headers: { Authorization: `Bearer ${token}` },
+    //     });
+    //     if (gr.ok) {
+    //       const gjson = await gr.json();
+    //       const names =
+    //         Array.isArray(gjson) ? gjson.map((g: any) => g?.name).filter(Boolean) : [];
+    //       setRoles(names);
+    //     } else {
+    //       // Non-fatal: keep roles empty if endpoint not present
+    //       setRoles([]);
+    //     }
 
-        // Load users
-        const res = await fetch(`${API_URL}/users/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
-        const data = await res.json();
-        const rows: UserRow[] = (Array.isArray(data) ? data : []).map((u: any) => ({
-          id: u.id,
-          username: u.username,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          email: u.email,
-          phone_number: u.phone_number,
-          national_id: u.national_id,
-          status: u.status ?? "active",
-          groups: (u.groups || []).map((g: any) => g?.name ?? g).filter(Boolean),
-          created_at: u.created_at,
-        }));
-        setUsers(rows);
-      } catch (e: any) {
-        setError(e?.message || "Failed to load data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    run();
+    //     // Load users
+    //     const res = await fetch(`${API_URL}/users/`, {
+    //       headers: { Authorization: `Bearer ${token}` },
+    //     });
+    //     if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
+    //     const data = await res.json();
+    //     const rows: UserRow[] = (Array.isArray(data) ? data : []).map((u: any) => ({
+    //       id: u.id,
+    //       username: u.username,
+    //       first_name: u.first_name,
+    //       last_name: u.last_name,
+    //       email: u.email,
+    //       phone_number: u.phone_number,
+    //       national_id: u.national_id,
+    //       status: u.status ?? "active",
+    //       groups: (u.groups || []).map((g: any) => g?.name ?? g).filter(Boolean),
+    //       created_at: u.created_at,
+    //     }));
+    //     setUsers(rows);
+    //   } catch (e: any) {
+    //     setError(e?.message || "Failed to load data");
+    //   } finally {
+    //     setLoading(false);
+    //   }
+    // };
+    // run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [API_URL, token]);
+    listUsers(token || "").then((res) => {
+      console.log(res);
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
