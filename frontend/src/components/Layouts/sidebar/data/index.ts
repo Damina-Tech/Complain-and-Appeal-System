@@ -35,8 +35,7 @@ export const NAV_DATA = [
           "President",
         ],
         items: [
-          { title: "All Users", url: "/users" },
-          { title: "Create User", url: "/users/create" },
+          { title: "Citizen Signup", url: "/users" },
         ],
       },
       {

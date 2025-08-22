@@ -2,27 +2,35 @@
 
 import { useParams, useRouter } from "next/navigation";
 import InputGroup from "@/components/FormElements/InputGroup";
+import { TextAreaGroup } from "@/components/FormElements/InputGroup/text-area";
 import { ShowcaseSection } from "@/components/Layouts/showcase-section";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function EditCasePage() {
   const { id } = useParams();
   const router = useRouter();
   const [caseData, setCaseData] = useState({
-    name: "",
-    nationalId: "",
-    phone: "",
+    title: "",
+    description: "",
     category: "",
-    date: "",
-    status: "",
+    status: "pending",
+    priority: "medium",
+    channel: "web",
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
 
-  // Load user by id and map to form fields
+  // Load case by id and map to form fields
   useEffect(() => {
     const load = async () => {
       if (!API_URL || !id) return;
@@ -31,19 +39,18 @@ export default function EditCasePage() {
       try {
         setLoading(true);
         setError("");
-        const res = await fetch(`${API_URL}/users/${id}/`, {
+        const res = await fetch(`${API_URL}/cases/${id}/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-        const u = await res.json();
-        const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "";
+        const c = await res.json();
         setCaseData({
-          name: fullName,
-          nationalId: u.national_id || "",
-          phone: u.phone_number || "",
-          category: "complaint",
-          date: (u.created_at ? String(u.created_at).slice(0, 10) : "").replace(/T.*/, ""),
-          status: u.status || "",
+          title: c?.title || "",
+          description: c?.description || "",
+          category: c?.category_id || "complaint",
+          status: c?.status || "pending",
+          priority: c?.priority || "medium",
+          channel: c?.channel || "web",
         });
       } catch (e: any) {
         setError(e?.message || "Failed to load data");
@@ -74,15 +81,15 @@ export default function EditCasePage() {
     try {
       setSaving(true);
       setError("");
-      const [first, ...rest] = caseData.name.trim().split(" ");
       const payload: any = {
-        first_name: first || "",
-        last_name: rest.join(" ") || "",
-        phone_number: caseData.phone,
-        national_id: caseData.nationalId,
-        status: caseData.status || "active",
+        title: caseData.title,
+        description: caseData.description,
+        category_id: caseData.category,
+        status: caseData.status,
+        priority: caseData.priority,
+        channel: caseData.channel,
       };
-      const res = await fetch(`${API_URL}/users/${id}/`, {
+      const res = await fetch(`${API_URL}/cases/${id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -113,63 +120,83 @@ export default function EditCasePage() {
       )}
       <form onSubmit={handleSubmit}>
         <InputGroup
-          label="Full Name"
+          label="Title"
           type="text"
-          name="name"
-          value={caseData.name}
+          name="title"
+          value={caseData.title}
           onChange={handleChange}
-          placeholder="Enter full name"
+          placeholder="Enter case title"
           className="mb-4.5"
         />
 
-        <InputGroup
-          label="National ID"
-          type="text"
-          name="nationalId"
-          value={caseData.nationalId}
-          onChange={handleChange}
-          placeholder="Enter national ID"
+        <TextAreaGroup
+          label="Description"
+          name="description"
+          value={caseData.description}
+          onChange={(e) => setCaseData((s) => ({ ...s, description: e.target.value }))}
+          placeholder="Enter description"
+          rows={6}
           className="mb-4.5"
         />
 
-        <InputGroup
-          label="Phone Number"
-          type="text"
-          name="phone"
-          value={caseData.phone}
-          onChange={handleChange}
-          placeholder="Enter phone number"
-          className="mb-4.5"
-        />
+        <div className="mb-4.5 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-body-sm font-medium">Category</label>
+            <Select value={caseData.category} onValueChange={(val) => setCaseData((s) => ({ ...s, category: val }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="complaint">Complaint</SelectItem>
+                <SelectItem value="appeal">Appeal</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-body-sm font-medium">Status</label>
+            <Select value={caseData.status} onValueChange={(val) => setCaseData((s) => ({ ...s, status: val }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="investigation">In Investigation</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-body-sm font-medium">Priority</label>
+            <Select value={caseData.priority} onValueChange={(val) => setCaseData((s) => ({ ...s, priority: val }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-        <InputGroup
-          label="Category"
-          type="text"
-          name="category"
-          value={caseData.category}
-          onChange={handleChange}
-          placeholder="Complaint or Appeal"
-          className="mb-4.5"
-        />
-
-        <InputGroup
-          label="Date"
-          type="date"
-          name="date"
-          value={caseData.date}
-          onChange={handleChange}
-          className="mb-4.5"
-        />
-
-        <InputGroup
-          label="Status"
-          type="text"
-          name="status"
-          value={caseData.status}
-          onChange={handleChange}
-          placeholder="Status"
-          className="mb-5.5"
-        />
+        <div className="mb-5.5">
+          <label className="mb-1 block text-body-sm font-medium">Channel</label>
+          <Select value={caseData.channel} onValueChange={(val) => setCaseData((s) => ({ ...s, channel: val }))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select channel" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="web">Web</SelectItem>
+              <SelectItem value="walk_in">Walk-in</SelectItem>
+              <SelectItem value="phone">Phone</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         <Button
           type="submit"

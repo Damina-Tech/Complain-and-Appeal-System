@@ -43,6 +43,14 @@ export default function PublicNavbar() {
               Sign In
             </Link>
           </li>
+          <li>
+            <Link
+              className="rounded-md border border-primary px-4 py-2 text-primary hover:bg-primary/10"
+              href="/auth/sign-up"
+            >
+              Sign Up
+            </Link>
+          </li>
         </ul>
       </div>
     </nav>

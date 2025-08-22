@@ -9,40 +9,12 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-// Mock data
-const mockData = [
-  {
-    id: 1,
-    name: "Ahmed Ali",
-    nationalId: "1234567890",
-    phone: "0912345678",
-    category: "complaint",
-    date: "2025-08-10",
-    status: "In Progress",
-    title: "Service Delay Complaint",
-    description: "Customer complaint about delayed service.",
-    resolvedDate: null,
-  },
-  {
-    id: 2,
-    name: "Fatima Mohammed",
-    nationalId: "0987654321",
-    phone: "0922334455",
-    category: "appeal",
-    date: "2025-08-12",
-    status: "Resolved",
-    title: "Appeal on Service Charges",
-    description: "Appeal regarding service charges.",
-    resolvedDate: "2025-08-15",
-  },
-];
 
 const statusColors: Record<string, string> = {
   Pending: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
-  "In Progress":
+  "In Investigation":
     "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   Resolved: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   Rejected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
@@ -52,19 +24,69 @@ const statusColors: Record<string, string> = {
 export default function CaseViewPage() {
   const { id } = useParams();
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-  const caseData = mockData.find((item) => item.id.toString() === id);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [caseData, setCaseData] = useState<any>(null);
 
   // Modal states
   const [modalOpen, setModalOpen] = useState<"transfer" | "assign" | "status" | null>(null);
-
-  // Success message state
   const [successMessage, setSuccessMessage] = useState("");
-
   const [selectedOffice, setSelectedOffice] = useState<string>("");
   const [selectedMember, setSelectedMember] = useState<string>("");
-  const [selectedStatus, setSelectedStatus] = useState<string>(caseData?.status || "");
+  const [selectedStatus, setSelectedStatus] = useState<string>("");
 
+  useEffect(() => {
+    const load = async () => {
+      if (!API_URL || !id) return;
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) return;
+      try {
+        setLoading(true);
+        setError("");
+        const res = await fetch(`${API_URL}/cases/${id}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
+        const c = await res.json();
+        setCaseData(c);
+        setSelectedStatus(
+          (c?.status || "pending").replace(/\b\w/g, (m: string) => m.toUpperCase()),
+        );
+      } catch (e: any) {
+        setError(e?.message || "Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const handleConfirm = (type: "transfer" | "assign" | "status") => {
+    let msg = "";
+    if (type === "transfer") msg = `Transferred to ${selectedOffice}`;
+    if (type === "assign") msg = `Assigned to ${selectedMember}`;
+    if (type === "status") msg = `Status changed to ${selectedStatus}`;
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(""), 3000);
+    setModalOpen(null);
+  };
+
+  if (loading) {
+    return <div className="p-6 text-gray-500">Loading...</div>;
+  }
+  if (error) {
+    return (
+      <div className="p-6 text-center text-red-500">
+        {error}
+        <Button onClick={() => router.push("/cases")} className="ml-4">
+          Back
+        </Button>
+      </div>
+    );
+  }
   if (!caseData) {
     return (
       <div className="p-6 text-center text-red-500">
@@ -76,21 +98,10 @@ export default function CaseViewPage() {
     );
   }
 
-  const offices = ["Head Office", "Regional Office", "Local Office"];
-  const members = ["Officer A", "Officer B", "Officer C"];
-  const statuses = ["Pending", "In Progress", "Resolved", "Rejected", "Closed"];
-
-  const handleConfirm = (type: "transfer" | "assign" | "status") => {
-    let msg = "";
-    if (type === "transfer") msg = `Transferred to ${selectedOffice}`;
-    if (type === "assign") msg = `Assigned to ${selectedMember}`;
-    if (type === "status") msg = `Status changed to ${selectedStatus}`;
-
-    setSuccessMessage(msg);
-    setTimeout(() => setSuccessMessage(""), 3000); // Clear after 3s
-    setModalOpen(null);
-    console.log(msg);
-  };
+  const titleCaseStatus = (caseData.status || "pending").replace(
+    /\b\w/g,
+    (m: string) => m.toUpperCase(),
+  );
 
   return (
     <div className="p-6">
@@ -109,58 +120,68 @@ export default function CaseViewPage() {
         <CardContent className="space-y-6 text-gray-700 dark:text-gray-300">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="font-semibold">Full Name</p>
-              <p>{caseData.name}</p>
-            </div>
-            <div>
-              <p className="font-semibold">National ID</p>
-              <p>{caseData.nationalId}</p>
-            </div>
-            <div>
-              <p className="font-semibold">Phone Number</p>
-              <p>{caseData.phone}</p>
-            </div>
-            <div>
               <p className="font-semibold">Category</p>
-              <p className="capitalize">{caseData.category}</p>
+              <p className="capitalize">{caseData.category_id}</p>
             </div>
             <div>
-              <p className="font-semibold">Date</p>
-              <p>{caseData.date}</p>
+              <p className="font-semibold">Created</p>
+              <p>{String(caseData.created_at).slice(0, 10)}</p>
+            </div>
+            <div>
+              <p className="font-semibold">Channel</p>
+              <p className="capitalize">{caseData.channel}</p>
+            </div>
+            <div>
+              <p className="font-semibold">Priority</p>
+              <p className="capitalize">{caseData.priority}</p>
             </div>
             <div>
               <p className="font-semibold">Status</p>
               <span
                 className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  statusColors[caseData.status] || ""
+                  statusColors[titleCaseStatus] || ""
                 }`}
               >
-                {caseData.status}
+                {titleCaseStatus}
               </span>
             </div>
-            {caseData.resolvedDate && (
-              <div>
-                <p className="font-semibold">Resolved Date</p>
-                <p>{caseData.resolvedDate}</p>
-              </div>
-            )}
           </div>
 
           <div>
             <p className="font-semibold">Description</p>
             <p className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border border-gray-200 dark:border-gray-700">
-              {caseData.description}
+              {caseData.description || "—"}
             </p>
           </div>
 
           <div>
             <p className="font-semibold">Attachments</p>
-            <div className="p-4 border rounded-md bg-gray-50 dark:bg-gray-800 text-sm text-gray-500 dark:text-gray-400">
-              No files uploaded
-            </div>
+            {Array.isArray(caseData.attachments) && caseData.attachments.length > 0 ? (
+              <ul className="space-y-2">
+                {caseData.attachments.map((a: any, idx: number) => (
+                  <li key={`${a.name || idx}`} className="flex items-center gap-3">
+                    <a
+                      href={a.data || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline"
+                    >
+                      {a.name || `Attachment ${idx + 1}`}
+                    </a>
+                    <span className="text-xs text-gray-500">
+                      {a.type} {a.size ? `(${Math.round(a.size / 1024)} KB)` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="p-4 border rounded-md bg-gray-50 dark:bg-gray-800 text-sm text-gray-500 dark:text-gray-400">
+                No files uploaded
+              </div>
+            )}
           </div>
 
-          {/* Actions */}
+          {/* Actions (UI only) */}
           <div className="flex gap-3 pt-4">
             <Button
               variant="outline"
@@ -199,7 +220,7 @@ export default function CaseViewPage() {
         )}
       </AnimatePresence>
 
-      {/* Modal */}
+      {/* Modal (UI only) */}
       <AnimatePresence>
         {modalOpen && (
           <motion.div
@@ -223,61 +244,51 @@ export default function CaseViewPage() {
               </h2>
 
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {modalOpen === "transfer" &&
-                  offices.map((office) => (
-                    <label key={office} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="transferOffice"
-                        value={office}
-                        checked={selectedOffice === office}
-                        onChange={() => setSelectedOffice(office)}
-                      />
-                      {office}
-                    </label>
-                  ))}
+                {modalOpen === "transfer" && ["Head Office", "Regional Office", "Local Office"].map((office) => (
+                  <label key={office} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="transferOffice"
+                      value={office}
+                      checked={selectedOffice === office}
+                      onChange={() => setSelectedOffice(office)}
+                    />
+                    {office}
+                  </label>
+                ))}
 
-                {modalOpen === "assign" &&
-                  members.map((member) => (
-                    <label key={member} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="assignMember"
-                        value={member}
-                        checked={selectedMember === member}
-                        onChange={() => setSelectedMember(member)}
-                      />
-                      {member}
-                    </label>
-                  ))}
+                {modalOpen === "assign" && ["Officer A", "Officer B", "Officer C"].map((member) => (
+                  <label key={member} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="assignMember"
+                      value={member}
+                      checked={selectedMember === member}
+                      onChange={() => setSelectedMember(member)}
+                    />
+                    {member}
+                  </label>
+                ))}
 
-                {modalOpen === "status" &&
-                  statuses.map((status) => (
-                    <label key={status} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="status"
-                        value={status}
-                        checked={selectedStatus === status}
-                        onChange={() => setSelectedStatus(status)}
-                      />
-                      {status}
-                    </label>
-                  ))}
+                {modalOpen === "status" && ["Pending", "In Investigation", "Resolved", "Rejected", "Closed"].map((status) => (
+                  <label key={status} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="status"
+                      value={status}
+                      checked={selectedStatus === status}
+                      onChange={() => setSelectedStatus(status)}
+                    />
+                    {status}
+                  </label>
+                ))}
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setModalOpen(null)}
-                >
+                <Button variant="ghost" onClick={() => setModalOpen(null)}>
                   Cancel
                 </Button>
-                <Button
-                  onClick={() =>
-                    modalOpen && handleConfirm(modalOpen)
-                  }
-                >
+                <Button onClick={() => modalOpen && handleConfirm(modalOpen)}>
                   Confirm
                 </Button>
               </div>
