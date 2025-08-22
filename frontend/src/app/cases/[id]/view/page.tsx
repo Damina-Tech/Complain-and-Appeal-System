@@ -103,6 +103,21 @@ export default function CaseViewPage() {
     (m: string) => m.toUpperCase(),
   );
 
+    // Get role from localStorage
+  const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
+
+  // Allowed roles for actions
+  const actionRoles = [
+    "Focal Person - Kebele",
+    "Focal Person - Wereda",
+    "Focal Person - Sector",
+    "Director",
+    "President Office",
+    "President",
+  ];
+  
+  const isClosed = titleCaseStatus === "Closed";
+
   return (
     <div className="p-6">
       <Button
@@ -148,6 +163,12 @@ export default function CaseViewPage() {
           </div>
 
           <div>
+            <p className="font-semibold">Title</p>
+            <p className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border border-gray-200 dark:border-gray-700">
+              {caseData.title || "—"}
+            </p>
+          </div>
+          <div>
             <p className="font-semibold">Description</p>
             <p className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border border-gray-200 dark:border-gray-700">
               {caseData.description || "—"}
@@ -182,27 +203,61 @@ export default function CaseViewPage() {
           </div>
 
           {/* Actions (UI only) */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              variant="outline"
-              className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400"
-              onClick={() => setModalOpen("transfer")}
-            >
-              Transfer
-            </Button>
-            <Button
-              className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => setModalOpen("assign")}
-            >
-              Assign
-            </Button>
-            <Button
-              className="rounded-lg bg-green-600 hover:bg-green-700 text-white"
-              onClick={() => setModalOpen("status")}
-            >
-              Change Status
-            </Button>
-          </div>
+          {role === "Citizen" ? (
+            <div className="flex gap-3 pt-4">
+              {isClosed ? (
+                <>
+                  <Button
+                    className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
+                    onClick={() => router.push(`/cases/${caseData.id}/appeal`)}
+                  >
+                    Submit Appeal
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="rounded-lg"
+                    onClick={() => router.push(`/cases/${caseData.id}/feedback`)}
+                  >
+                    Give Feedback
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={() => router.push(`/cases/${caseData.id}/edit`)}
+                >
+                  Edit
+                </Button>
+              )}
+            </div>
+          ) : (
+            role &&
+            actionRoles.includes(role) && (
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400"
+                  onClick={() => setModalOpen("transfer")}
+                >
+                  Transfer
+                </Button>
+                <Button
+                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => setModalOpen("assign")}
+                >
+                  Assign
+                </Button>
+                <Button
+                  className="rounded-lg bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => setModalOpen("status")}
+                >
+                  Change Status
+                </Button>
+              </div>
+            )
+          )}
+
+
         </CardContent>
       </Card>
 

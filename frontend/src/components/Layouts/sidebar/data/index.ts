@@ -24,7 +24,7 @@ export const NAV_DATA = [
         ],
       },
       {
-        title: "Users",
+        title: "User Management",
         icon: Icons.User,
         allowedRoles: [
           "Focal Person - Kebele",
@@ -35,7 +35,30 @@ export const NAV_DATA = [
           "President",
         ],
         items: [
-          { title: "Citizen Signup", url: "/users" },
+          { title: "User", url: "/users",
+            allowedRoles: [
+              "Focal Person - Kebele",
+              "Focal Person - Wereda",
+              "Focal Person - Sector",
+              "Director",
+              "President Office",
+              "President",
+            ],
+          },
+          { title: "Role", url: "/roles",
+            allowedRoles: [
+              "Director",
+              "President Office",
+              "President",
+            ], 
+          },
+          { title: "Office", url: "/offices",
+            allowedRoles: [
+              "Director",
+              "President Office",
+              "President",
+            ], 
+          },
         ],
       },
       {

@@ -70,15 +70,16 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({"message": "User marked as deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
-def is_citizen(user: User) -> bool:
+def is_citizen(user):
     return user.groups.filter(name="Citizen").exists()
 
 
 class CaseAccessPermission(BasePermission):
     """
     - Citizens: can list/retrieve ONLY their cases; can create only for themselves;
-                can submit_feedback / submit_appeal on their own case;
-                cannot update/destroy/change_status.
+                can update/partial_update their own cases;
+                can submit_feedback / submit_appeal / mark_seen on their own cases;
+                cannot destroy/change_status.
     - Staff/Admins (non-citizen or superuser): full access.
     """
 
@@ -87,53 +88,50 @@ class CaseAccessPermission(BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        # Citizens:
         if is_citizen(user):
-            # Allowed view actions for citizens
-            allowed_actions = {"list", "retrieve", "create", "submit_feedback", "submit_appeal", "mark_seen"}
-            # .action is set for actions; for plain methods (list/create/retrieve/update) DRF sets accordingly
+            allowed_actions = {
+                "list", "retrieve", "create",
+                "update", "partial_update",
+                "submit_feedback", "submit_appeal", "mark_seen",
+            }
             action = getattr(view, "action", None)
             if action in allowed_actions:
                 return True
-            # For plain HTTP methods without action resolution (rare), allow only safe reads
             if request.method in SAFE_METHODS:
                 return True
             return False
 
-        # Staff / admins
+        # staff/admins
         return True
 
-    def has_object_permission(self, request, view, obj: Case):
+    def has_object_permission(self, request, view, obj):
         user = request.user
         if not user or not user.is_authenticated:
             return False
 
-        # Staff/admins: full object access
+        # staff/admins get full object access
         if not is_citizen(user) or user.is_superuser:
             return True
 
-        # Citizens: object must belong to them
+        # citizens: object must be theirs
         is_owner = (obj.citizen_id_id == user.id)
 
-        # Citizens can view their own objects
         if request.method in SAFE_METHODS and is_owner:
             return True
 
         action = getattr(view, "action", None)
 
-        # Citizens may retrieve their own case
-        if action == "retrieve" and is_owner:
+        # allow retrieve / update / partial_update on own case
+        if action in {"retrieve", "update", "partial_update"} and is_owner:
             return True
 
-        # Citizens may mark_seen / submit_feedback / submit_appeal on their own case
+        # allow mark_seen / submit_feedback / submit_appeal on own case
         if action in {"mark_seen", "submit_feedback", "submit_appeal"} and is_owner:
             return True
 
-        # Citizens may create (object-level doesn’t apply yet), updates/deletes not allowed
         if action == "create":
             return True
 
-        # Otherwise deny
         return False
 
 
@@ -181,16 +179,26 @@ class CaseViewSet(viewsets.ModelViewSet):
         )
 
     def update(self, request, *args, **kwargs):
-        """Ensure status change is tracked with history + status_changed_by."""
+        """
+        Allow citizens to edit ONLY specific fields on their own cases;
+        staff can edit everything. Still track status history on real status changes.
+        """
         partial = kwargs.pop('partial', False)
-        instance = self.get_object()  # object permission checked
-
-        # Citizens are blocked by CaseAccessPermission.has_permission(), but keep defensive check:
-        if is_citizen(request.user):
-            return Response({"detail": "Not permitted."}, status=403)
-
+        instance = self.get_object()  # object-level permission already checked
         previous_status = instance.status
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+
+        data = request.data.copy()
+
+        # If editor is a citizen, restrict editable fields
+        if is_citizen(request.user):
+            # choose the fields you want citizens to be able to change:
+            allowed = {"title", "description", "attachments", "channel"}
+            # Option A: silently drop forbidden fields
+            for key in list(data.keys()):
+                if key not in allowed:
+                    data.pop(key, None)
+
+        serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
@@ -203,6 +211,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 status=instance.status,
                 changed_by=request.user
             )
+
         return Response(self.get_serializer(instance).data)
 
     def perform_update(self, serializer):
