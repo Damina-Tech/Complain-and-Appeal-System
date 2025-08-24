@@ -166,10 +166,6 @@ export default function EditCasePage() {
         throw new Error(msg || `Update failed: ${baseRes.status}`);
       }
 
-      // 2) Save attachment changes (replace/remove/add).
-      // This assumes your DRF endpoint accepts multipart on PATCH for attachments.
-      // If your API uses a separate endpoint like `/cases/:id/attachments/`,
-      // replace the URL below and send only attachment fields there.
       const hasAttachmentChanges =
         newFiles.length > 0 || toRemove.size > 0 || Object.keys(replacements).length > 0;
 

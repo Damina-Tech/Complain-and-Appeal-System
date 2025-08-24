@@ -40,11 +40,6 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">{roleTitle} Dashboard</h1>
-        <p className="text-gray-600 dark:text-dark-6">Role: {roleTitle}</p>
-      </div>
-
       <Suspense fallback={<OverviewCardsSkeleton />}>
         <OverviewCardsGroup />
       </Suspense>

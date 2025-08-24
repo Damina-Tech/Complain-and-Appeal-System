@@ -10,11 +10,11 @@ import ProtectedWrapper from "@/components/ProtectedWrapper";
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | NextAdmin - Next.js Dashboard Kit",
-    default: "NextAdmin - Next.js Dashboard Kit",
+    template: "%s | Compaint and Appeal System",
+    default: "Compaint and Appeal System",
   },
   description:
-    "Next.js admin dashboard toolkit with 200+ templates, UI components, and integrations for fast dashboard development.",
+    "Harari Regional State Complaint and Appeal Management System Dashboard",
 };
 
 export default function RootLayout({ children }: PropsWithChildren) {

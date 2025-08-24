@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from rest_framework import serializers
 from .models import *
+from django.contrib.auth.models import Group, Permission
 
 User = get_user_model()
 
@@ -58,10 +59,17 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 class OfficeSerializer(serializers.ModelSerializer):
+    added_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
+
     class Meta:
         model = Office
-        fields = ["id", "name"]
-
+        fields = [
+            "id", "name", "phone_number", "email", "address",
+            "is_active", "created_at", "updated_at",
+            "added_by", "updated_by"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "added_by", "updated_by"]
 
 class CaseStatusHistorySerializer(serializers.ModelSerializer):
     changed_by = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -163,3 +171,23 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if from_user and from_user == to_user:
             raise serializers.ValidationError("from_user_id and to_user_id cannot be the same.")
         return attrs
+    
+
+class GroupSerializer(serializers.ModelSerializer):
+    # Write by permission IDs; read returns both IDs and codenames
+    permissions = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Permission.objects.all(), required=False
+    )
+    permission_codenames = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field="codename", source="permissions"
+    )
+
+    class Meta:
+        model = Group
+        fields = ["id", "name", "permissions", "permission_codenames"]
+
+    def validate_name(self, value):
+        qs = Group.objects.exclude(pk=self.instance.pk) if self.instance else Group.objects.all()
+        if qs.filter(name__iexact=value).exists():
+            raise serializers.ValidationError("A group with this name already exists.")
+        return value

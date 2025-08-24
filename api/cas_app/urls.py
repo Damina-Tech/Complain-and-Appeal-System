@@ -9,6 +9,7 @@ router.register(r'cases', CaseViewSet, basename='case')
 router.register(r'offices', OfficeViewSet, basename='office')
 router.register(r'transfers', TransferViewSet, basename='transfer')
 router.register(r'assignments', AssignmentViewSet, basename='assignment')
+router.register(r"groups", GroupViewSet, basename="group")
 
 urlpatterns = [
     path("", include(router.urls)),

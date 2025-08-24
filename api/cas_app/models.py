@@ -6,6 +6,7 @@ class User(AbstractUser):
     national_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True) 
     address = models.TextField(null=True, blank=True)  # Optional address field
+    office = models.ForeignKey('Office', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     last_seen = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, default='active')  # e.g
     deleted_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_users')
@@ -17,6 +18,21 @@ class User(AbstractUser):
 
 class Office(models.Model):
     name = models.CharField(max_length=150, unique=True)
+    # office_representative = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="offices_represented")
+    phone_number = models.CharField(max_length=15, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    added_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="offices_added"
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="offices_updated"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -72,7 +88,7 @@ class Case(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Case #{self.pk} ({self.get_category_id_display()})"
+        return f"{self.title} ({self.get_category_id_display()})"
 
 
 class CaseStatusHistory(models.Model):

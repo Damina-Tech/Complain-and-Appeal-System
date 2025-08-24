@@ -6,6 +6,8 @@ from .serializers import *
 from .models import *
 from django.db import transaction
 from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.filters import SearchFilter, OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
 
 User = get_user_model()
 
@@ -318,6 +320,14 @@ class OfficeViewSet(viewsets.ModelViewSet):
     serializer_class = OfficeSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def perform_create(self, serializer):
+        # auto-attach who created the office
+        serializer.save(added_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        # update tracking
+        serializer.save(updated_by=self.request.user)
+        
 class TransferViewSet(viewsets.ModelViewSet):
     """
     Creates a transfer and, on success, updates the case.office_id to the destination office.
@@ -373,3 +383,109 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(ser.data)
         ser = self.get_serializer(qs, many=True)
         return Response(ser.data)
+    
+
+class GroupViewSet(viewsets.ModelViewSet):
+    """
+    /groups/                      GET, POST
+    /groups/{id}/                 GET, PUT, PATCH, DELETE
+
+    Custom:
+    /groups/{id}/users/           GET
+    /groups/{id}/add_users/       POST { "user_ids": [1,2] }
+    /groups/{id}/remove_users/    POST { "user_ids": [1,2] }
+    /groups/{id}/set_users/       PUT  { "user_ids": [1,2] }
+
+    /groups/{id}/permissions/     GET
+    /groups/{id}/add_permissions/ POST { "permission_ids": [10,11] }
+    /groups/{id}/remove_permissions/ POST { "permission_ids": [10,11] }
+    /groups/{id}/set_permissions/ PUT  { "permission_ids": [10,11] }
+    """
+    queryset = Group.objects.all().prefetch_related("permissions", "user_set")
+    serializer_class = GroupSerializer
+
+    # optional: filters/search (works out of the box if django-filter installed)
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = {
+        "permissions": ["exact"],
+        "permissions__codename": ["exact", "in"],
+        "name": ["exact", "icontains"],
+    }
+    search_fields = ["name", "permissions__codename", "permissions__name", "user_set__username", "user_set__email"]
+    ordering_fields = ["name", "id"]
+    ordering = ["name"]
+
+    # ---------- Users in a group ----------
+    @action(detail=True, methods=["get"], url_path="users")
+    def users(self, request, pk=None):
+        g = self.get_object()
+        data = list(g.user_set.order_by("username").values("id", "username", "email", "is_active"))
+        return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="add_users")
+    def add_users(self, request, pk=None):
+        g = self.get_object()
+        ids = request.data.get("user_ids", [])
+        users = User.objects.filter(id__in=ids)
+        for u in users:
+            u.groups.add(g)
+        return Response({"added": list(users.values_list("id", flat=True))}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="remove_users")
+    def remove_users(self, request, pk=None):
+        g = self.get_object()
+        ids = request.data.get("user_ids", [])
+        users = User.objects.filter(id__in=ids)
+        for u in users:
+            u.groups.remove(g)
+        return Response({"removed": list(users.values_list("id", flat=True))}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["put"], url_path="set_users")
+    def set_users(self, request, pk=None):
+        g = self.get_object()
+        new_ids = set(request.data.get("user_ids", []))
+        current_ids = set(g.user_set.values_list("id", flat=True))
+
+        # remove missing
+        for uid in current_ids - new_ids:
+            user = User.objects.filter(id=uid).first()
+            if user:
+                user.groups.remove(g)
+        # add new
+        for uid in new_ids - current_ids:
+            user = User.objects.filter(id=uid).first()
+            if user:
+                user.groups.add(g)
+
+        return Response({"users": sorted(list(new_ids))}, status=status.HTTP_200_OK)
+
+    # ---------- Permissions in a group ----------
+    @action(detail=True, methods=["get"], url_path="permissions")
+    def list_permissions(self, request, pk=None):
+        g = self.get_object()
+        data = list(g.permissions.order_by("codename").values("id", "codename", "name"))
+        return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="add_permissions")
+    def add_permissions(self, request, pk=None):
+        g = self.get_object()
+        ids = request.data.get("permission_ids", [])
+        perms = Permission.objects.filter(id__in=ids)
+        g.permissions.add(*perms)
+        return Response({"added": list(perms.values_list("id", flat=True))}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="remove_permissions")
+    def remove_permissions(self, request, pk=None):
+        g = self.get_object()
+        ids = request.data.get("permission_ids", [])
+        perms = Permission.objects.filter(id__in=ids)
+        g.permissions.remove(*perms)
+        return Response({"removed": list(perms.values_list("id", flat=True))}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["put"], url_path="set_permissions")
+    def set_permissions(self, request, pk=None):
+        g = self.get_object()
+        ids = request.data.get("permission_ids", [])
+        perms = Permission.objects.filter(id__in=ids)
+        g.permissions.set(perms)
+        return Response({"permissions": list(perms.values_list("id", flat=True))}, status=status.HTTP_200_OK)
