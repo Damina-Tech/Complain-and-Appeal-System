@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import Group
 # Create your models here.
 
 class User(AbstractUser):
@@ -145,3 +146,24 @@ class Assignment(models.Model):
 
     def __str__(self):
         return f"Assignment Case#{self.case_id_id} {self.from_user_id} -> {self.to_user_id} @ {self.timestamp:%Y-%m-%d %H:%M}"
+    
+class Announcement(models.Model):
+    title       = models.CharField(max_length=200)
+    content     = models.TextField()
+    is_active   = models.BooleanField(default=True)
+
+    # audience
+    recipients_groups  = models.ManyToManyField(Group, blank=True, related_name="announcements")   # roles
+    recipients_offices = models.ManyToManyField(Office, blank=True, related_name="announcements")  # offices
+
+    # audit
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="ann_created")
+    updated_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="ann_updated")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title

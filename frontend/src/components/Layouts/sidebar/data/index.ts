@@ -1,3 +1,4 @@
+import { url } from "inspector";
 import * as Icons from "../icons";
 
 export const NAV_DATA = [
@@ -105,8 +106,8 @@ export const NAV_DATA = [
         items: [],
       },
       {
-        title: " Office Stats",
-        url: "/forms",
+        title: " Reports",
+        url: "/reports",
         icon: Icons.Alphabet,
         allowedRoles: ["Director", "President Office", "President"],
         items: [],
@@ -127,6 +128,7 @@ export const NAV_DATA = [
       },
       {
         title: "Help & Guidelines",
+        url: "/help-guidelines",
         icon: Icons.Alphabet,
         allowedRoles: [
           "Citizen",

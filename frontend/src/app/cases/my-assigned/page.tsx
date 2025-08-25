@@ -45,20 +45,8 @@ type AssignmentRecord = {
 
 /* ===================== Helpers ===================== */
 
-const nameOfUser = (u?: ApiUser | string | number | null) => {
-  if (!u) return "—";
-  if (typeof u === "string" || typeof u === "number") return String(u);
-  const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
-  return full || u.email || u.username || String(u.id);
-};
-
 const caseIdOf = (r: AssignmentRecord) =>
   r.case_id ?? (typeof r.case === "object" ? r.case?.id : r.case);
-
-const caseTitleOf = (r: AssignmentRecord) => {
-  const c = r.case;
-  return typeof c === "object" && c?.title ? c.title : `Case #${caseIdOf(r)}`;
-};
 
 const fetchAllPaginated = async <T,>(
   url: string,
@@ -99,6 +87,10 @@ export default function MyAssignedCasesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Enrichment caches
+  const [titleMap, setTitleMap] = useState<Record<string, string>>({});
+  const [fromNameMap, setFromNameMap] = useState<Record<string, string>>({});
+
   // Search
   const [search, setSearch] = useState("");
 
@@ -108,7 +100,7 @@ export default function MyAssignedCasesPage() {
       setLoading(true);
       setError("");
 
-      // Prefer server-side filter; adjust the param name to your API if needed
+      // Prefer server-side filter; adjust param to match your API if needed
       const url = currentUserId
         ? `${API_URL}/assignments/?to_user_id=${encodeURIComponent(currentUserId)}`
         : `${API_URL}/assignments/`;
@@ -124,6 +116,9 @@ export default function MyAssignedCasesPage() {
         : data;
 
       setAssignments(filtered);
+
+      // Kick off enrichment (titles + from-user names)
+      await enrichDetails(filtered);
     } catch (e: any) {
       setError(e?.message || "Failed to load data");
     } finally {
@@ -131,29 +126,95 @@ export default function MyAssignedCasesPage() {
     }
   };
 
+  // Enrich titles (from /cases/:id) and "from" names (from /users/:id)
+  const enrichDetails = async (rows: AssignmentRecord[]) => {
+    if (!API_URL || !token) return;
+
+    const missingCaseIds = new Set<string>();
+    const missingFromUserIds = new Set<string>();
+
+    rows.forEach((r) => {
+      const cid = caseIdOf(r);
+      const cidStr = cid ? String(cid) : "";
+      if (cidStr && !titleMap[cidStr]) {
+        // only if case object didn't already include a title
+        const hasTitle = typeof r.case === "object" && r.case?.title;
+        if (!hasTitle) missingCaseIds.add(cidStr);
+      }
+
+      const rawFrom = r.from_user_id ?? (typeof r.from_user === "object" ? r.from_user?.id : r.from_user);
+      const fromIdStr = rawFrom ? String(rawFrom) : "";
+      const hasFromName =
+        typeof r.from_user === "object" &&
+        (r.from_user?.first_name || r.from_user?.last_name || r.from_user?.email || r.from_user?.username);
+      if (fromIdStr && !hasFromName && !fromNameMap[fromIdStr]) {
+        missingFromUserIds.add(fromIdStr);
+      }
+    });
+
+    // Fetch missing case titles
+    const fetchCaseTitles = Array.from(missingCaseIds).map(async (cid) => {
+      const res = await fetch(`${API_URL}/cases/${cid}/`, { headers, cache: "no-store" });
+      if (!res.ok) return;
+      const c: ApiCase = await res.json();
+      if (c?.id != null) {
+        setTitleMap((m) => ({ ...m, [String(c.id)]: c.title || `Case #${c.id}` }));
+      }
+    });
+
+    // Fetch missing from-user names
+    const fetchUsers = Array.from(missingFromUserIds).map(async (uid) => {
+      const res = await fetch(`${API_URL}/users/${uid}/`, { headers, cache: "no-store" });
+      if (!res.ok) return;
+      const u: ApiUser = await res.json();
+      if (u?.id != null) {
+        const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+        const label = full || u.email || u.username || String(u.id);
+        setFromNameMap((m) => ({ ...m, [String(u.id)]: label }));
+      }
+    });
+
+    await Promise.all([...fetchCaseTitles, ...fetchUsers]);
+  };
+
   useEffect(() => {
     loadAssigned();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const titleOfRow = (r: AssignmentRecord) => {
+    if (typeof r.case === "object" && r.case?.title) return r.case.title as string;
+    const cid = caseIdOf(r);
+    return cid ? (titleMap[String(cid)] || `Case #${cid}`) : "—";
+    // Once the titleMap fills, UI will update.
+  };
+
+  const fromNameOfRow = (r: AssignmentRecord) => {
+    if (typeof r.from_user === "object") {
+      const full = `${r.from_user.first_name || ""} ${r.from_user.last_name || ""}`.trim();
+      return full || r.from_user.email || r.from_user.username || String(r.from_user.id);
+    }
+    const id = r.from_user_id ?? r.from_user;
+    return id ? (fromNameMap[String(id)] || String(id)) : "—";
+  };
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return assignments;
     return assignments.filter((r) => {
-      const title = caseTitleOf(r).toLowerCase();
+      const title = titleOfRow(r).toLowerCase();
       const reason = (r.reason || "").toLowerCase();
-      const fromUser = nameOfUser(r.from_user ?? r.from_user_id).toLowerCase();
-      return (
-        title.includes(term) ||
-        reason.includes(term) ||
-        fromUser.includes(term)
-      );
+      const fromUser = fromNameOfRow(r).toLowerCase();
+      return title.includes(term) || reason.includes(term) || fromUser.includes(term);
     });
-  }, [assignments, search]);
+    // include deps that change derived values
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignments, search, titleMap, fromNameMap]);
 
   return (
     <>
-      <Breadcrumb pageName="My Assigned Cases" />
+      {/* Brand-colored breadcrumb tail (see section 2 for Breadcrumb tweak) */}
+      <Breadcrumb pageName="My Assigned Cases"/>
 
       <div
         className={cn(
@@ -228,17 +289,12 @@ export default function MyAssignedCasesPage() {
                   >
                     <TableCell className="!text-left">
                       <div className="flex items-center justify-between gap-2">
-                        <span>{caseTitleOf(r)}</span>
-                        <Link
-                          href={`/cases/${cid}/view`}
-                          className="text-primary text-sm underline"
-                        >
-                          View
-                        </Link>
+                        <span>{titleOfRow(r)}</span>
+       
                       </div>
                     </TableCell>
 
-                    <TableCell>{nameOfUser(r.from_user ?? r.from_user_id)}</TableCell>
+                    <TableCell>{fromNameOfRow(r)}</TableCell>
 
                     <TableCell className="truncate max-w-[320px]">
                       {r.reason || "—"}
@@ -253,11 +309,17 @@ export default function MyAssignedCasesPage() {
                     </TableCell>
 
                     <TableCell>
-                      <Link href={`/cases/${cid}/view`}>
-                        <Button size="icon" variant="ghost" title="View case">
-                          <Eye className="h-4 w-4 text-blue-500" />
+                      {cid ? (
+                        <Link href={`/cases/${cid}/view`}>
+                          <Button size="icon" variant="ghost" title="View case">
+                            <Eye className="h-4 w-4 text-blue-500" />
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Button size="icon" variant="ghost" disabled title="No case id">
+                          <Eye className="h-4 w-4" />
                         </Button>
-                      </Link>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

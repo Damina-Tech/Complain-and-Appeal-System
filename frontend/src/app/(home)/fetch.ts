@@ -4,19 +4,19 @@ export async function getOverviewData() {
 
   return {
     views: {
-      value: 3456,
+      value: 1456,
       growthRate: 0.43,
     },
     profit: {
-      value: 4220,
+      value: 2220,
       growthRate: 4.35,
     },
     products: {
-      value: 3456,
+      value: 456,
       growthRate: 2.59,
     },
     users: {
-      value: 3456,
+      value: 856,
       growthRate: -0.95,
     },
   };

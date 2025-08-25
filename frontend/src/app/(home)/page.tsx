@@ -1,4 +1,4 @@
-import { PaymentsOverview } from "@/components/Charts/payments-overview";
+import { PaymentsOverview } from "@/components/Charts/cases-overview";
 import { UsedDevices } from "@/components/Charts/used-devices";
 import { WeeksProfit } from "@/components/Charts/weeks-profit";
 import { TopChannels } from "@/components/Tables/top-channels";

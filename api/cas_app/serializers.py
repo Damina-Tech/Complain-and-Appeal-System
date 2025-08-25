@@ -191,3 +191,20 @@ class GroupSerializer(serializers.ModelSerializer):
         if qs.filter(name__iexact=value).exists():
             raise serializers.ValidationError("A group with this name already exists.")
         return value
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    recipients_groups = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Group.objects.all()
+    )
+    recipients_offices = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Office.objects.all()
+    )
+
+    class Meta:
+        model = Announcement
+        fields = [
+            "id", "title", "content", "is_active",
+            "recipients_groups", "recipients_offices",
+            "created_at", "updated_at", "created_by", "updated_by",
+        ]
+        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by"]

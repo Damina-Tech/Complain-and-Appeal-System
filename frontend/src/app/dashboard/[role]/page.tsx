@@ -1,7 +1,6 @@
 import { Suspense } from "react";
-import { PaymentsOverview } from "@/components/Charts/payments-overview";
-import { UsedDevices } from "@/components/Charts/used-devices";
-import { WeeksProfit } from "@/components/Charts/weeks-profit";
+import { CasesOverview } from "@/components/Charts/cases-overview";           // ✅ named export
+import { CasesByCategory } from "@/components/Charts/cases-by-category";     // ✅ named export
 import { TopChannels } from "@/components/Tables/top-channels";
 import { TopChannelsSkeleton } from "@/components/Tables/top-channels/skeleton";
 import { OverviewCardsGroup } from "@/app/(home)/_components/overview-cards";
@@ -10,6 +9,7 @@ import { ChatsCard } from "@/app/(home)/_components/chats-card";
 import { RegionLabels } from "@/app/(home)/_components/region-labels";
 import { createTimeFrameExtractor } from "@/utils/timeframe-extractor";
 import { redirect } from "next/navigation";
+import { TopSources } from "@/components/Tables/top-sources";
 
 type PropsType = {
   params: Promise<{ role: string }>;
@@ -32,7 +32,6 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
     redirect("/cases");
   }
 
-  // Simple role-based section toggles (customize as needed)
   const isCitizen = /citizen/i.test(role);
   const isFocal = /focal/i.test(role);
   const isDirector = /director/i.test(role);
@@ -45,23 +44,18 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
       </Suspense>
 
       <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 md:gap-6 2xl:mt-9 2xl:gap-7.5">
-        {/* Common widgets */}
-        <PaymentsOverview
+        {/* Complaint/Appeal widgets */}
+        <CasesOverview
           className="col-span-12 xl:col-span-7"
-          key={extract("payments_overview")}
-          timeFrame={extract("payments_overview")?.split(":")[1]}
+          key={extract("cases_overview")}
+          timeFrame={extract("cases_overview")?.split(":")[1]}
         />
-        <WeeksProfit
-          key={extract("weeks_profit")}
-          timeFrame={extract("weeks_profit")?.split(":")[1]}
+
+        <CasesByCategory
           className="col-span-12 xl:col-span-5"
+          key={extract("cases_by_category")}
+          timeFrame={extract("cases_by_category")?.split(":")[1]}
         />
-        <UsedDevices
-          className="col-span-12 xl:col-span-5"
-          key={extract("used_devices")}
-          timeFrame={extract("used_devices")?.split(":")[1]}
-        />
-        <RegionLabels />
 
         {/* Role-specific sections (examples) */}
         {isCitizen && (
@@ -100,7 +94,7 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
         {/* Common table/cards */}
         <div className="col-span-12 grid xl:col-span-8">
           <Suspense fallback={<TopChannelsSkeleton />}>
-            <TopChannels />
+            <TopSources />
           </Suspense>
         </div>
         <Suspense fallback={null}>
@@ -110,5 +104,3 @@ export default async function RoleDashboardPage({ params, searchParams }: PropsT
     </>
   );
 }
-
-
