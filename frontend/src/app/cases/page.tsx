@@ -127,9 +127,9 @@ export default function ComplaintAppealPage() {
     let nextUrl: string | null = `${baseUrl}/cases/`;
 
     while (nextUrl) {
-      const res = await fetch(nextUrl, { headers, cache: "no-store" });
+      const res: Response = await fetch(nextUrl, { headers, cache: "no-store" });
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-      const data = await res.json();
+      const data: any = await res.json();
 
       if (Array.isArray(data)) {
         all = all.concat(data as ApiCase[]);
