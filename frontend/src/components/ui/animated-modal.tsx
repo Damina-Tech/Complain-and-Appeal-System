@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 type AnimatedModalProps = {
   open: boolean;
@@ -31,14 +32,14 @@ export function AnimatedModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  return (
+  const modalContent = (
     <AnimatePresence>
       {open && (
         <>
           {/* Backdrop */}
           <motion.div
             key="backdrop"
-            className="fixed inset-0 z-[100] bg-black/40"
+            className="fixed inset-0 z-[9999] bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -48,7 +49,7 @@ export function AnimatedModal({
           {/* Panel */}
           <motion.div
             key="panel"
-            className="fixed inset-0 z-[101] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
             initial={{ opacity: 0, scale: 0.98, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 8 }}
@@ -58,22 +59,24 @@ export function AnimatedModal({
             aria-label={title}
           >
             <div
-              className={`w-full ${maxWidthClassName} rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-dark-3 dark:bg-gray-dark`}
+              className={`w-full ${maxWidthClassName} rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-dark-3 dark:bg-gray-dark relative`}
               onClick={(e) => e.stopPropagation()}
             >
-              {(title || onClose) && (
-                <div className="mb-3 flex items-center justify-between">
+              {/* Close button - always visible */}
+              <button
+                type="button"
+                className="absolute top-3 right-3 rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+              
+              {title && (
+                <div className="mb-3 pr-8">
                   <h3 className="text-lg font-semibold text-dark dark:text-white">
                     {title}
                   </h3>
-                  <button
-                    type="button"
-                    className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-dark-6 dark:hover:bg-dark-2"
-                    onClick={onClose}
-                    aria-label="Close"
-                  >
-                    ✕
-                  </button>
                 </div>
               )}
               {children}
@@ -83,4 +86,11 @@ export function AnimatedModal({
       )}
     </AnimatePresence>
   );
+
+  // Use portal to render modal outside the main layout
+  if (typeof window !== "undefined") {
+    return createPortal(modalContent, document.body);
+  }
+
+  return modalContent;
 }
