@@ -2,25 +2,13 @@
 
 import PublicNavbar from "@/components/PublicNavbar";
 import Link from "next/link";
-import { useTranslation } from "@/lib/translations";
-import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const ACCENT = "#5750f1";
 
 export default function HomePage() {
   const year = new Date().getFullYear();
   const { t } = useTranslation();
-  const [, forceUpdate] = useState({});
-
-  // Listen for language changes
-  useEffect(() => {
-    const handleLanguageChange = () => {
-      forceUpdate({});
-    };
-
-    window.addEventListener("languageChange", handleLanguageChange);
-    return () => window.removeEventListener("languageChange", handleLanguageChange);
-  }, []);
 
   return (
     <div className="min-h-screen bg-white text-gray-900 dark:bg-[#020d1a] dark:text-white">

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { LanguageSelector } from "@/components/LanguageSelector";
-import { useTranslation } from "@/lib/translations";
+import { useTranslation } from "react-i18next";
 
 const ACCENT = "#5750f1";
 
@@ -12,17 +12,6 @@ export default function PublicNavbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { t } = useTranslation();
-  const [, forceUpdate] = useState({});
-
-  // Listen for language changes
-  useEffect(() => {
-    const handleLanguageChange = () => {
-      forceUpdate({});
-    };
-
-    window.addEventListener("languageChange", handleLanguageChange);
-    return () => window.removeEventListener("languageChange", handleLanguageChange);
-  }, []);
 
   const linkActive = (href: string) =>
     pathname === href ? "text-[#5750f1]" : "text-dark-2 dark:text-dark-6";

@@ -10,7 +10,7 @@ import { Notification } from "./notification";
 import { ThemeToggleSwitch } from "./theme-toggle";
 import { UserInfo } from "./user-info";
 import { LanguageSelector } from "@/components/LanguageSelector";
-import { useTranslation } from "@/lib/translations";
+import { useTranslation } from "react-i18next";
 
 function toTitleCase(input?: string) {
   const s = (input ?? "").trim();

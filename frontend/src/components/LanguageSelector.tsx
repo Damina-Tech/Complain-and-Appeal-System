@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import i18n from "i18next";
 import { ChevronDown, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,11 +36,7 @@ export function LanguageSelector() {
     setSelectedLanguage(language);
     localStorage.setItem("selectedLanguage", language.code);
     setIsOpen(false);
-    
-    // Dispatch custom event for language change
-    window.dispatchEvent(new CustomEvent("languageChange", { 
-      detail: { language: language.code } 
-    }));
+    i18n.changeLanguage(language.code);
   };
 
   return (
