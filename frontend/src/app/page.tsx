@@ -2,11 +2,25 @@
 
 import PublicNavbar from "@/components/PublicNavbar";
 import Link from "next/link";
+import { useTranslation } from "@/lib/translations";
+import { useEffect, useState } from "react";
 
 const ACCENT = "#5750f1";
 
 export default function HomePage() {
   const year = new Date().getFullYear();
+  const { t } = useTranslation();
+  const [, forceUpdate] = useState({});
+
+  // Listen for language changes
+  useEffect(() => {
+    const handleLanguageChange = () => {
+      forceUpdate({});
+    };
+
+    window.addEventListener("languageChange", handleLanguageChange);
+    return () => window.removeEventListener("languageChange", handleLanguageChange);
+  }, []);
 
   return (
     <div className="min-h-screen bg-white text-gray-900 dark:bg-[#020d1a] dark:text-white">
@@ -25,14 +39,13 @@ export default function HomePage() {
           <div className="grid items-center gap-10 md:grid-cols-2">
             <div>
               <h1 className="mb-3 text-4xl font-extrabold leading-tight md:text-5xl">
-                A faster way to handle{" "}
+                {t("fasterWayToHandle")}{" "}
                 <span className="underline decoration-4" style={{ textDecorationColor: ACCENT }}>
-                  complaints & appeals
+                  {t("complaintsAndAppealsText")}
                 </span>
               </h1>
               <p className="max-w-xl text-lg text-gray-600 dark:text-dark-6">
-                Paper processes—modernized. Submit, track, transfer, and resolve
-                cases across offices with clear accountability and timely reports.
+                {t("paperProcessesModernized")}
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -41,14 +54,14 @@ export default function HomePage() {
                   className="rounded-md px-6 py-3 font-semibold text-white hover:opacity-90"
                   style={{ background: ACCENT }}
                 >
-                  Get Started
+                  {t("getStarted")}
                 </Link>
                 <Link
                   href="/services"
                   className="rounded-md border px-6 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-dark-2"
                   style={{ borderColor: "rgba(87,80,241,0.35)", color: ACCENT }}
                 >
-                  Learn More
+                  {t("learnMore")}
                 </Link>
               </div>
 
