@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { LanguageSelector } from "@/components/LanguageSelector";
+import { useTranslation } from "react-i18next";
 
 const ACCENT = "#5750f1";
 
 export default function PublicNavbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   const linkActive = (href: string) =>
     pathname === href ? "text-[#5750f1]" : "text-dark-2 dark:text-dark-6";
@@ -47,27 +50,28 @@ export default function PublicNavbar() {
 
         {/* Desktop nav */}
         <ul className="hidden items-center gap-6 md:flex">
-          <li><NavLink href="/">Home</NavLink></li>
-          <li><NavLink href="/about">About</NavLink></li>
-          <li><NavLink href="/services">Services</NavLink></li>
-          <li><NavLink href="/contact">Contact</NavLink></li>
+          <li><NavLink href="/">{t("home")}</NavLink></li>
+          <li><NavLink href="/about">{t("about")}</NavLink></li>
+          <li><NavLink href="/services">{t("services")}</NavLink></li>
+          <li><NavLink href="/contact">{t("contact")}</NavLink></li>
         </ul>
 
         {/* Auth buttons (desktop) */}
         <div className="hidden items-center gap-3 md:flex">
+          <LanguageSelector />
           <Link
             href="/auth/sign-in"
             className="rounded-md border px-4 py-2 font-semibold hover:opacity-90"
             style={{ borderColor: ACCENT, color: ACCENT }}
           >
-            Sign In
+            {t("signIn")}
           </Link>
           <Link
             href="/auth/sign-up"
             className="rounded-md px-4 py-2 font-semibold text-white hover:opacity-90"
             style={{ background: ACCENT }}
           >
-            Sign Up
+            {t("signUp")}
           </Link>
         </div>
 
@@ -88,10 +92,13 @@ export default function PublicNavbar() {
       {open && (
         <div className="border-t border-gray-200/70 md:hidden dark:border-dark-3">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-3">
-            <NavLink href="/">Home</NavLink>
-            <NavLink href="/about">About</NavLink>
-            <NavLink href="/services">Services</NavLink>
-            <NavLink href="/contact">Contact</NavLink>
+            <NavLink href="/">{t("home")}</NavLink>
+            <NavLink href="/about">{t("about")}</NavLink>
+            <NavLink href="/services">{t("services")}</NavLink>
+            <NavLink href="/contact">{t("contact")}</NavLink>
+            <div className="mt-2">
+              <LanguageSelector />
+            </div>
             <div className="mt-2 flex gap-2">
               <Link
                 href="/auth/sign-in"
@@ -99,7 +106,7 @@ export default function PublicNavbar() {
                 style={{ borderColor: ACCENT, color: ACCENT }}
                 onClick={() => setOpen(false)}
               >
-                Sign In
+                {t("signIn")}
               </Link>
               <Link
                 href="/auth/sign-up"
@@ -107,7 +114,7 @@ export default function PublicNavbar() {
                 style={{ background: ACCENT }}
                 onClick={() => setOpen(false)}
               >
-                Sign Up
+                {t("signUp")}
               </Link>
             </div>
           </div>
