@@ -9,7 +9,8 @@ export function defaultRouteForRole(role?: string | null): string {
   if (!role) return "/dashboard";
   const normalized = role.toLowerCase();
   if (normalized.includes("citizen")) return "/cases";
-  return `/dashboard/${slugFromRole(role)}`;
+  // Hide role in URL; always use clean /dashboard for non-citizens
+  return "/dashboard";
 }
 
 

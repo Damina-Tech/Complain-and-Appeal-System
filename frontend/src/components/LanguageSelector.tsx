@@ -15,6 +15,7 @@ const languages: Language[] = [
   { code: "en", name: "English", nativeName: "English" },
   { code: "am", name: "Amharic", nativeName: "አማርኛ" },
   { code: "ha", name: "Harari", nativeName: "ሐረሪ" },
+  { code: "om", name: "Oromo", nativeName: "Afaan Oromoo" },
 ];
 
 export function LanguageSelector() {
