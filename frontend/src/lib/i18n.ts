@@ -60,6 +60,25 @@ const resources = {
       learnMore: "ተጨማሪ ይወቁ",
     },
   },
+  om: {
+    translation: {
+      home: "Mana",
+      about: "Waa'ee",
+      services: "Tajaajiloota",
+      contact: "Quunnamtii",
+      signIn: "Seeni",
+      signUp: "Galmaa'i",
+      dashboard: "Daashboordii",
+      role: "Gahee",
+      search: "Barbaadi",
+      fasterWayToHandle: "Too'achuu karaa saffisaa",
+      complaintsAndAppealsText: "komii fi iyyannoo",
+      paperProcessesModernized:
+        "Adeemsi gabatee waraaqaa haalaan taasifame. Dhimmoota galmeessi, hordofi, dabarsi, fi baji'aa gabaasa yeroon waliin furadhu.",
+      getStarted: "Jalqabi",
+      learnMore: "Dabalata baradhu",
+    },
+  },
 };
 
 export function initI18n() {
@@ -70,7 +89,7 @@ export function initI18n() {
       .init({
         resources,
         fallbackLng: "en",
-        supportedLngs: ["en", "am", "ha"],
+        supportedLngs: ["en", "am", "ha", "om"],
         interpolation: { escapeValue: false },
         detection: {
           order: ["localStorage", "navigator", "htmlTag"],
