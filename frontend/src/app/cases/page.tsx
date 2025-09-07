@@ -445,9 +445,14 @@ export default function ComplaintAppealPage() {
             <SelectTrigger>
               <SelectValue placeholder="Select Category" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="complaint">Complaint</SelectItem>
-              <SelectItem value="appeal">Appeal</SelectItem>
+            <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
+              <SelectItem value="land">Land</SelectItem>
+              <SelectItem value="education">Education</SelectItem>
+              <SelectItem value="infrastructure">Infrastructure</SelectItem>
+              <SelectItem value="healthcare">Healthcare</SelectItem>
+              <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
+              <SelectItem value="human right">Human Right</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
 

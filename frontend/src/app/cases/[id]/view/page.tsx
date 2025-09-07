@@ -2,10 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
@@ -44,8 +41,7 @@ type ApiUser = {
 /* ---------------- UI helpers ---------------- */
 const statusColors: Record<string, string> = {
   Pending: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
-  "In Investigation":
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  "In Investigation": "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   Resolved: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   Rejected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   Closed: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -119,13 +115,16 @@ export default function CaseViewPage() {
   // Modals
   const [modalOpen, setModalOpen] = useState<"transfer" | "assign" | "status" | null>(null);
 
-  // Form values
+  // Transfer form
   const [selectedOfficeId, setSelectedOfficeId] = useState<string>("");
   const [transferReason, setTransferReason] = useState<string>("");
 
+  // Assign form
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const [assignReason, setAssignReason] = useState<string>("");
+  const [assignDueDays, setAssignDueDays] = useState<string>(""); // NEW
 
+  // Status form
   const [selectedStatusUI, setSelectedStatusUI] = useState<string>("Pending");
 
   // Success
@@ -193,6 +192,7 @@ export default function CaseViewPage() {
     }
   };
 
+
   useEffect(() => {
     loadCase();
     loadOffices();
@@ -254,7 +254,6 @@ export default function CaseViewPage() {
     (typeof window !== "undefined" && localStorage.getItem("user_id")) || "";
   const currentOfficeId =
     (typeof window !== "undefined" && localStorage.getItem("office_id")) ||
-    // fallback to case's office if you want:
     (caseData?.office_id ? String(caseData.office_id) : "");
 
   /* -------- action handlers -------- */
@@ -296,13 +295,28 @@ export default function CaseViewPage() {
     if (!currentUserId) return setError("Your user id is unknown (user_id missing).");
     if (!assignReason.trim()) return;
 
+    const days = Number(assignDueDays);
+    if (!Number.isFinite(days) || days <= 0) {
+      return setError("Please provide a valid countdown days (minimum 1).");
+    }
+
+    // compute due date (today + days) -> YYYY-MM-DD
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + days);
+    const dueDateISO = dueDate.toISOString().slice(0, 10);
+
     try {
       const payload = {
         case_id: String(id),
         from_user_id: String(currentUserId),
         to_user_id: String(selectedMemberId),
         reason: assignReason.trim(),
+
+        // IMPORTANT: backend expects dates here
+        countdown_days: dueDateISO,   // <-- DateField, so send YYYY-MM-DD
+        due_date: dueDateISO,         // <-- DateField, send the same computed date
       };
+
       const res = await fetch(ASSIGN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
@@ -344,6 +358,15 @@ export default function CaseViewPage() {
       setError(e?.message || "Status update failed");
     }
   };
+
+  /* -------- derived -------- */
+  const computedDueDate = useMemo(() => {
+    const days = Number(assignDueDays);
+    if (!Number.isFinite(days) || days <= 0) return "";
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }, [assignDueDays]);
 
   /* -------- render -------- */
   if (loading) return <div className="p-6 text-gray-500">Loading...</div>;
@@ -429,33 +452,6 @@ export default function CaseViewPage() {
             </p>
           </div>
 
-          <div>
-            <p className="font-semibold">Attachments</p>
-            {Array.isArray(caseData.attachments) && caseData.attachments.length > 0 ? (
-              <ul className="space-y-2">
-                {caseData.attachments.map((a, idx) => (
-                  <li key={`${a.name || idx}`} className="flex items-center gap-3">
-                    <a
-                      href={a.data || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline"
-                    >
-                      {a.name || `Attachment ${idx + 1}`}
-                    </a>
-                    <span className="text-xs text-gray-500">
-                      {a.type} {a.size ? `(${Math.round(a.size / 1024)} KB)` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="p-4 border rounded-md bg-gray-50 dark:bg-gray-800 text-sm text-gray-500 dark:text-gray-400">
-                No files uploaded
-              </div>
-            )}
-          </div>
-
           {/* Actions */}
           {role === "Citizen" ? (
             <div className="flex gap-3 pt-4">
@@ -513,7 +509,7 @@ export default function CaseViewPage() {
         </CardContent>
       </Card>
 
-      {/* Transfer Modal (with Reason) */}
+      {/* Transfer Modal */}
       <AnimatedModal
         open={modalOpen === "transfer"}
         onClose={() => setModalOpen(null)}
@@ -567,7 +563,7 @@ export default function CaseViewPage() {
         </div>
       </AnimatedModal>
 
-      {/* Assign Modal (with Reason) */}
+      {/* Assign Modal (Assign To + Reason + Due in Days) */}
       <AnimatedModal
         open={modalOpen === "assign"}
         onClose={() => setModalOpen(null)}
@@ -595,6 +591,28 @@ export default function CaseViewPage() {
             </select>
           </div>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Due in (days)</label>
+              <input
+                type="number"
+                min={1}
+                className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+                placeholder="e.g., 7"
+                value={assignDueDays}
+                onChange={(e) => setAssignDueDays(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Due Date (auto)</label>
+              <input
+                className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+                value={computedDueDate || "—"}
+                readOnly
+              />
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block text-sm font-medium">Reason</label>
             <textarea
@@ -613,7 +631,9 @@ export default function CaseViewPage() {
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white"
               onClick={handleAssign}
-              disabled={!selectedMemberId || !assignReason.trim()}
+              disabled={
+                !selectedMemberId || !assignReason.trim() || !assignDueDays || Number(assignDueDays) <= 0
+              }
             >
               Confirm Assign
             </Button>
@@ -621,7 +641,7 @@ export default function CaseViewPage() {
         </div>
       </AnimatedModal>
 
-      {/* Change Status Modal (unchanged) */}
+      {/* Change Status Modal */}
       <AnimatedModal
         open={modalOpen === "status"}
         onClose={() => setModalOpen(null)}

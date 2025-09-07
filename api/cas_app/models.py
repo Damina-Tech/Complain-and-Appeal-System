@@ -19,7 +19,7 @@ class User(AbstractUser):
 
 class Office(models.Model):
     name = models.CharField(max_length=150, unique=True)
-    # office_representative = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="offices_represented")
+    office_representative = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="offices_represented")
     phone_number = models.CharField(max_length=15, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     address = models.TextField(null=True, blank=True)
@@ -42,8 +42,12 @@ class Office(models.Model):
 class Case(models.Model):
     # enums kept simple for now; adjust as needed
     CATEGORY_CHOICES = [
-        ("complaint", "Complaint"),
-        ("appeal", "Appeal"),
+        ("land", "Land"),
+        ("education", "Education"),
+        ("infrastructure", "Infrastructure"),
+        ("healthcare", "Healthcare"),
+        ("water & sanitation", "Water & Sanitation"),
+        ("human right", "Human Right"),
         ("other", "Other"),
     ]
     CHANNEL_CHOICES = [
@@ -59,7 +63,7 @@ class Case(models.Model):
     ]
     STATUS_CHOICES = [
         ("pending", "Pending"),  # newly created
-        ("investigation", "In Investigation"),
+        ("in_investigation", "In Investigation"),
         ("resolved", "Resolved"),
         ("rejected", "Rejected"),
         ("closed", "Closed"),
@@ -139,6 +143,8 @@ class Assignment(models.Model):
     from_user_id  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignments_out")
     to_user_id    = models.ForeignKey(User, on_delete=models.PROTECT, related_name="assignments_in")
     reason        = models.TextField(blank=True)
+    countdown_days      = models.DateField(null=True, blank=True)
+    due_date      = models.DateField(null=True, blank=True)
     timestamp     = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -379,6 +379,8 @@ export default function CaseActivityPage() {
     !selectedRow
       ? mode === "transfer" ? "Re-Transfer Case" : "Re-Assign Case"
       : `${mode === "transfer" ? "Re-Transfer" : "Re-Assign"} — ${caseTitleOf(selectedRow)}`;
+  
+      
 
   /* ===================== Render ===================== */
 

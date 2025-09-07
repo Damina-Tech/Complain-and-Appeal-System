@@ -1,24 +1,49 @@
+import { Suspense } from "react";
 import { CasesOverview } from "@/components/Charts/cases-overview";
-import { UsedDevices } from "@/components/Charts/used-devices";
-import { WeeksProfit } from "@/components/Charts/weeks-profit";
+import { CasesByCategory } from "@/components/Charts/cases-by-category";
 import { TopChannels } from "@/components/Tables/top-channels";
 import { TopChannelsSkeleton } from "@/components/Tables/top-channels/skeleton";
-import { createTimeFrameExtractor } from "@/utils/timeframe-extractor";
-import { Suspense } from "react";
-import { ChatsCard } from "@/app/(home)/_components/chats-card";
 import { OverviewCardsGroup } from "@/app/(home)/_components/overview-cards";
 import { OverviewCardsSkeleton } from "@/app/(home)/_components/overview-cards/skeleton";
+import { ChatsCard } from "@/app/(home)/_components/chats-card";
 import { RegionLabels } from "@/app/(home)/_components/region-labels";
+import { createTimeFrameExtractor } from "@/utils/timeframe-extractor";
+import { redirect } from "next/navigation";
+import { TopSources } from "@/components/Tables/top-sources"; // (you import it, add/use it if needed)
 
 type PropsType = {
-  searchParams: Promise<{
-    selected_time_frame?: string;
-  }>;
+  params: { role?: string };
+  searchParams: { selected_time_frame?: string };
 };
 
-export default async function DashboardPage({ searchParams }: PropsType) {
-  const { selected_time_frame } = await searchParams;
-  const extractTimeFrame = createTimeFrameExtractor(selected_time_frame);
+function toTitleCase(input?: string) {
+  const s = input ?? "";
+  return s.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export default async function RoleDashboardPage({ params, searchParams }: PropsType) {
+  const role = params?.role; // no await
+  const selected_time_frame = searchParams?.selected_time_frame; // no await
+
+  const extract = createTimeFrameExtractor(selected_time_frame);
+  const roleTitle = toTitleCase(role); // now safe even if role is undefined
+
+  // If this page is meant to be used only with a role param, you can decide what to do when it's missing:
+  // Example: redirect to a default dashboard
+  if (!role) {
+    // If your route is /dashboard (no role), keep user here; otherwise, choose a sensible default:
+    // redirect("/dashboard");
+  }
+
+  // Only redirect citizens when role is actually present
+  if (role && /citizen/i.test(role)) {
+    redirect("/cases");
+  }
+
+  const isCitizen = !!role && /citizen/i.test(role);
+  const isFocal = !!role && /focal/i.test(role);
+  const isDirector = !!role && /director/i.test(role);
+  const isPresident = !!role && /president/i.test(role);
 
   return (
     <>
@@ -29,27 +54,21 @@ export default async function DashboardPage({ searchParams }: PropsType) {
       <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 md:gap-6 2xl:mt-9 2xl:gap-7.5">
         <CasesOverview
           className="col-span-12 xl:col-span-7"
-          key={extractTimeFrame("cases_overview")}
-          timeFrame={extractTimeFrame("cases_overview")?.split(":")[1]}
+          key={extract("cases_overview")}
+          timeFrame={extract("cases_overview")?.split(":")[1]}
         />
 
-        <WeeksProfit
-          key={extractTimeFrame("weeks_profit")}
-          timeFrame={extractTimeFrame("weeks_profit")?.split(":")[1]}
+        <CasesByCategory
           className="col-span-12 xl:col-span-5"
+          key={extract("cases_by_category")}
+          timeFrame={extract("cases_by_category")?.split(":")[1]}
         />
 
-        <UsedDevices
-          className="col-span-12 xl:col-span-5"
-          key={extractTimeFrame("used_devices")}
-          timeFrame={extractTimeFrame("used_devices")?.split(":")[1]}
-        />
-
-        <RegionLabels />
+        {/* <RegionLabels /> */}
 
         <div className="col-span-12 grid xl:col-span-8">
           <Suspense fallback={<TopChannelsSkeleton />}>
-            <TopChannels />
+            <TopSources />
           </Suspense>
         </div>
 

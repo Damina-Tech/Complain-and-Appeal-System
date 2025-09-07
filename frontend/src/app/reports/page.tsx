@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { RefreshCcw, Download } from "lucide-react";
 
-/* ===================== Types (adjust to your API) ===================== */
+/* ===================== Types ===================== */
 
 type SummaryResp = {
   total_cases: number;
@@ -27,8 +27,8 @@ type SummaryResp = {
   avg_resolution_days: number | null;
 };
 
-type StatusRow = { status: string; count: number };
-type OfficeRow = { office_id: number | string; office_name: string; count: number };
+type StatusRow   = { status: string; count: number };
+type OfficeRow   = { office_id: number | string; office_name: string; count: number };
 type CategoryRow = { category: string; count: number };
 type AssigneeRow = { user_id: number | string; full_name: string; active_cases: number };
 
@@ -40,13 +40,14 @@ type Filters = {
   office_id?: string;
 };
 
-/* ===================== Helpers ===================== */
+/* ===================== Config ===================== */
 
-const allowedRoles = new Set([
-  "Director",
-  "President Office",
-  "President",
-]);
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
+
+const allowedRoles = new Set(["Director", "President Office", "President"]);
+
+/* ===================== Utilities ===================== */
 
 const fetchAllPaginated = async <T,>(url: string, headers: Record<string, string>): Promise<T[]> => {
   let next: string | null = url;
@@ -92,11 +93,105 @@ const Bar = ({ value, max, label }: { value: number; max: number; label?: string
   );
 };
 
+/* ===================== Mock Data ===================== */
+
+const mockOffices = [
+  { id: "1", name: "President Office" },
+  { id: "2", name: "Regional Admin Office" },
+  { id: "3", name: "Kebele 01" },
+  { id: "4", name: "Kebele 02" },
+  { id: "5", name: "Civil Service Bureau" },
+];
+
+const mockCategories = ["service", "land", "employment", "finance", "security"];
+
+const mockSummary: SummaryResp = {
+  total_cases: 1248,
+  open_cases: 812,                // open = not in {resolved, rejected, closed}
+  resolved_cases: 436,            // resolved+closed
+  avg_resolution_days: 6.2,
+};
+
+const mockByStatus: StatusRow[] = [
+  { status: "pending",            count: 420 },
+  { status: "in investigation",   count: 392 },
+  { status: "resolved",           count: 280 },
+  { status: "rejected",           count: 78 },
+  { status: "closed",             count: 78 },
+];
+
+const mockByOffice: OfficeRow[] = [
+  { office_id: "1", office_name: "President Office",       count: 106 },
+  { office_id: "2", office_name: "Regional Admin Office",  count: 235 },
+  { office_id: "3", office_name: "Kebele 01",              count: 318 },
+  { office_id: "4", office_name: "Kebele 02",              count: 287 },
+  { office_id: "5", office_name: "Civil Service Bureau",   count: 302 },
+];
+
+const mockByCategory: CategoryRow[] = [
+  { category: "service",    count: 410 },
+  { category: "land",       count: 295 },
+  { category: "employment", count: 238 },
+  { category: "finance",    count: 175 },
+  { category: "security",   count: 130 },
+];
+
+const mockTopAssignees: AssigneeRow[] = [
+  { user_id: "11", full_name: "Abel Mohammed",    active_cases: 36 },
+  { user_id: "12", full_name: "Samiya Ali",       active_cases: 33 },
+  { user_id: "13", full_name: "Daniel Tesfaye",   active_cases: 29 },
+  { user_id: "14", full_name: "Mekdes Girma",     active_cases: 24 },
+  { user_id: "15", full_name: "Biniam Hailu",     active_cases: 22 },
+];
+
+/* Filters applied to mocks to feel “real” */
+function filterMocks(
+  search: string,
+  filters: Filters,
+) {
+  const q = search.trim().toLowerCase();
+
+  // status
+  let s = [...mockByStatus];
+  if (filters.status && filters.status !== "all") {
+    s = s.filter(r => r.status.toLowerCase() === filters.status?.toLowerCase());
+  }
+  if (q) {
+    s = s.filter(r => r.status.toLowerCase().includes(q));
+  }
+
+  // office
+  let o = [...mockByOffice];
+  if (filters.office_id && filters.office_id !== "all") {
+    o = o.filter(r => String(r.office_id) === String(filters.office_id));
+  }
+  if (q) {
+    o = o.filter(r => r.office_name.toLowerCase().includes(q));
+  }
+
+  // category
+  let c = [...mockByCategory];
+  if (filters.category && filters.category !== "all") {
+    c = c.filter(r => r.category.toLowerCase() === filters.category?.toLowerCase());
+  }
+  if (q) {
+    c = c.filter(r => r.category.toLowerCase().includes(q));
+  }
+
+  // assignees
+  let a = [...mockTopAssignees];
+  if (q) {
+    a = a.filter(r => r.full_name.toLowerCase().includes(q));
+  }
+
+  // summary stays same (could compute from filtered sets if desired)
+  return { summary: mockSummary, byStatus: s, byOffice: o, byCategory: c, topAssignees: a };
+}
+
 /* ===================== Page ===================== */
 
 export default function ReportsPage() {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -143,27 +238,44 @@ export default function ReportsPage() {
   // UX
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
   /* ---------- Load Options ---------- */
   const loadOptions = async () => {
-    if (!API_URL || !token) return;
+    // Mock options
+    if (USE_MOCK || !API_URL || !token) {
+      setOffices(mockOffices.map(o => ({ id: o.id, name: o.name })));
+      setCategories([...mockCategories]);
+      return;
+    }
+
     try {
       const [off, cats] = await Promise.all([
-        // change endpoints if different
         fetchAllPaginated<{ id: string | number; name: string }>(`${API_URL}/offices/`, headers),
         fetchAllPaginated<{ name: string }>(`${API_URL}/categories/`, headers).catch(() => []),
       ]);
-
       setOffices(off.map(o => ({ id: String(o.id), name: o.name })));
       setCategories((cats as any[]).map((c: any) => c.name).filter(Boolean));
     } catch {
-      // non-fatal
+      // non-fatal fallback to mock
+      setOffices(mockOffices.map(o => ({ id: o.id, name: o.name })));
+      setCategories([...mockCategories]);
     }
   };
 
   /* ---------- Load Reports ---------- */
   const loadReports = async () => {
-    if (!API_URL || !token) return;
+    // Mocked
+    if (USE_MOCK || !API_URL || !token) {
+      const m = filterMocks(search, filters);
+      setSummary(m.summary);
+      setByStatus(m.byStatus);
+      setByOffice(m.byOffice);
+      setByCategory(m.byCategory);
+      setTopAssignees(m.topAssignees);
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -173,9 +285,9 @@ export default function ReportsPage() {
         status: filters.status !== "all" ? filters.status : undefined,
         category: filters.category !== "all" ? filters.category : undefined,
         office_id: filters.office_id !== "all" ? filters.office_id : undefined,
+        search: search || undefined,
       });
 
-      // Adjust endpoints to your DRF routes:
       const [s, bs, bo, bc, ta] = await Promise.all([
         fetch(`${API_URL}/reports/summary/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<SummaryResp>,
         fetch(`${API_URL}/reports/cases_by_status/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<StatusRow[]>,
@@ -204,25 +316,13 @@ export default function ReportsPage() {
   useEffect(() => {
     loadReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.date_from, filters.date_to, filters.status, filters.category, filters.office_id]);
+  }, [filters.date_from, filters.date_to, filters.status, filters.category, filters.office_id, search]);
 
   /* ---------- Derived ---------- */
-  const maxStatus = useMemo(
-    () => Math.max(0, ...byStatus.map((r) => r.count)),
-    [byStatus]
-  );
-  const maxOffice = useMemo(
-    () => Math.max(0, ...byOffice.map((r) => r.count)),
-    [byOffice]
-  );
-  const maxCategory = useMemo(
-    () => Math.max(0, ...byCategory.map((r) => r.count)),
-    [byCategory]
-  );
-  const maxAssignee = useMemo(
-    () => Math.max(0, ...topAssignees.map((r) => r.active_cases)),
-    [topAssignees]
-  );
+  const maxStatus   = useMemo(() => Math.max(0, ...byStatus.map((r) => r.count)), [byStatus]);
+  const maxOffice   = useMemo(() => Math.max(0, ...byOffice.map((r) => r.count)), [byOffice]);
+  const maxCategory = useMemo(() => Math.max(0, ...byCategory.map((r) => r.count)), [byCategory]);
+  const maxAssignee = useMemo(() => Math.max(0, ...topAssignees.map((r) => r.active_cases)), [topAssignees]);
 
   /* ---------- Export CSV helpers ---------- */
   const exportCsv = (rows: any[], columns: string[], filename: string) => {
@@ -251,7 +351,6 @@ export default function ReportsPage() {
 
   return (
     <>
-      {/* Brand-colored breadcrumb tail is already applied globally */}
       <Breadcrumb pageName="Reports" />
 
       <div className={cn("rounded-[10px] bg-white p-5 shadow-1 dark:bg-gray-dark dark:shadow-card")}>
@@ -331,8 +430,14 @@ export default function ReportsPage() {
             </Select>
           </div>
 
-          {/* Actions */}
-          <div className="mt-6 flex items-center gap-2 md:col-span-12">
+          {/* Search & Actions */}
+          <div className="md:col-span-12 mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Search (status, office, category, assignee)…"
+              className="w-full max-w-xs"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
             <Button variant="ghost" onClick={loadReports} title="Refresh">
               <RefreshCcw className="h-4 w-4" />
             </Button>

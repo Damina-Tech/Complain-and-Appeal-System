@@ -162,7 +162,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Assignment
-        fields = ["id", "case_id", "from_user_id", "to_user_id", "reason", "timestamp"]
+        fields = ["id", "case_id", "from_user_id", "to_user_id", "reason", 'countdown_days', 'due_date', "timestamp"]
         read_only_fields = ["timestamp"]
 
     def validate(self, attrs):

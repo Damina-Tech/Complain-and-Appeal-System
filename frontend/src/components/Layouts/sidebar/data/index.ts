@@ -80,7 +80,7 @@ export const NAV_DATA = [
       {
         title: "Transfers",
         url: "/cases/activity",
-        icon: Icons.User,
+        icon: Icons.ReferralAvatar,
         allowedRoles: [
           "Focal Person - Kebele",
           "Focal Person - Wereda",
@@ -106,15 +106,15 @@ export const NAV_DATA = [
         items: [],
       },
       {
-        title: " Reports",
+        title: "Reports",
         url: "/reports",
-        icon: Icons.Alphabet,
+        icon: Icons.ReportsAvatar,
         allowedRoles: ["Director", "President Office", "President"],
         items: [],
       },
       {
         title: "Announcements",
-        icon: Icons.Alphabet,
+        icon: Icons.AnnouncementsAvatar,
         allowedRoles: [
           "Citizen",
           "Focal Person - Kebele",

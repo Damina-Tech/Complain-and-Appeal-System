@@ -49,15 +49,104 @@ export function User(props: PropsType) {
       fill="none"
       {...props}
     >
+      <circle cx="12" cy="7" r="4" fill="currentColor" />
       <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M2.25 7A.75.75 0 013 6.25h10a.75.75 0 010 1.5H3A.75.75 0 012.25 7zm14.25-.75a.75.75 0 01.684.442l4.5 10a.75.75 0 11-1.368.616l-1.437-3.194H14.12l-1.437 3.194a.75.75 0 11-1.368-.616l4.5-10a.75.75 0 01.684-.442zm-1.704 6.364h3.408L16.5 8.828l-1.704 3.786zM2.25 12a.75.75 0 01.75-.75h7a.75.75 0 010 1.5H3a.75.75 0 01-.75-.75zm0 5a.75.75 0 01.75-.75h5a.75.75 0 010 1.5H3a.75.75 0 01-.75-.75z"
+        d="M4 20c0-4 4-7 8-7s8 3 8 7v1H4v-1z"
         fill="currentColor"
       />
     </svg>
   );
 }
+
+export function ReferralAvatar(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      {/* Person 1 */}
+      <circle cx={7} cy={7} r={3} stroke="currentColor" strokeWidth={1.5} />
+      <path
+        d="M2.5 13c0-2 2-3.5 4.5-3.5S11.5 11 11.5 13v1H2.5v-1z"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        fill="none"
+      />
+
+      {/* Person 2 */}
+      <circle cx={17} cy={17} r={3} stroke="currentColor" strokeWidth={1.5} />
+      <path
+        d="M12.5 23c0-2 2-3.5 4.5-3.5S21.5 21 21.5 23v.5h-9v-.5z"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        fill="none"
+      />
+
+      {/* Referral arrows */}
+      <path
+        d="M10 7h4M14 7l-1.5-1.5M14 7l-1.5 1.5"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function ReportsAvatar(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      {/* Document outline */}
+      <rect
+        x={4}
+        y={3}
+        width={16}
+        height={18}
+        rx={2}
+        stroke="currentColor"
+        strokeWidth={1.5}
+        fill="none"
+      />
+      {/* Chart bars */}
+      <path d="M9 15v-3M13 15v-6M17 15v-4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function AnnouncementsAvatar(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      {/* Megaphone shape */}
+      <path
+        d="M3 10v4a1 1 0 0 0 1 1h2l5 3v-12l-5 3H4a1 1 0 0 0-1 1z"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        fill="none"
+      />
+      {/* Sound waves */}
+      <path d="M17 9a3 3 0 0 1 0 6M19 7a6 6 0 0 1 0 10" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 
 export function Calendar(props: PropsType) {
   return (
