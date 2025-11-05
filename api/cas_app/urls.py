@@ -17,4 +17,5 @@ urlpatterns = [
     path("", include(router.urls)),
     path('login/', user_login, name='user_login'),
     path('logout/', logout_view, name='logout_view'),
+    path('auth/me/', current_user, name='current_user'),
 ]

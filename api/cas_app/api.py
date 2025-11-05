@@ -22,6 +22,18 @@ class IsSelfOrStaff(permissions.BasePermission):
         return request.user.is_authenticated and obj.pk == request.user.pk
 
 
+class IsDirectorOrAdmin(permissions.BasePermission):
+    """Allow Directors or Admin users to access."""
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        # Admin users (staff/superuser)
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        # Directors
+        return request.user.groups.filter(name="Director").exists()
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("-id")
     serializer_class = UserSerializer
@@ -34,15 +46,20 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action in ["retrieve", "partial_update", "update"]:
             return [permissions.IsAuthenticated(), IsSelfOrStaff()]
         if self.action in ["list", "destroy"]:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+            return [permissions.IsAuthenticated(), IsDirectorOrAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
-        # Staff/admins can list; others can only see self (handled by permissions above).
-        if self.request.user.is_authenticated and self.request.user.is_staff:
-            return super().get_queryset().exclude(status="deleted")
-        # Non-staff: queryset is limited to self to avoid leaking existence via list.
-        return User.objects.filter(pk=self.request.user.pk).exclude(status="deleted")
+        # Staff/admins/Directors can list; others can only see self (handled by permissions above).
+        if self.request.user.is_authenticated:
+            is_staff = self.request.user.is_staff or self.request.user.is_superuser
+            is_director = self.request.user.groups.filter(name="Director").exists()
+            if is_staff or is_director:
+                return super().get_queryset().exclude(status="deleted")
+            # Non-staff/Director: queryset is limited to self to avoid leaking existence via list.
+            return User.objects.filter(pk=self.request.user.pk).exclude(status="deleted")
+        # Fallback for unauthenticated (shouldn't reach here due to permissions, but safety check)
+        return User.objects.none()
 
     def perform_create(self, serializer):
         # For self-registration, request.user may be Anonymous; added_by stays None.

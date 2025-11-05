@@ -74,6 +74,21 @@ def logout_view(request):
     return Response({'message': 'logged out successfully.'}, status=status.HTTP_200_OK)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user(request):
+    """Return the current authenticated user's information."""
+    user = request.user
+    serializer = UserSerializer(user)
+    # Add full_name for frontend compatibility
+    data = serializer.data
+    full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    data['full_name'] = full_name
+    # Add user groups for role checking
+    data['user_groups'] = [group.name for group in user.groups.all()]
+    return Response(data, status=status.HTTP_200_OK)
+
+
 #change password function
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
