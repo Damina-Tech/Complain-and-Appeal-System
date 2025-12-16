@@ -73,6 +73,7 @@ class Case(models.Model):
     parent_case       = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="child_cases")
 
     citizen_id      = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_reported")
+    reported_by     = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases_reported_by", help_text="User who reported the case to the officer")
     office_id       = models.ForeignKey(Office, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases")
     title           = models.CharField(max_length=500, null=True, blank=True)  # optional title for the case
     description     = models.TextField(null=True, blank=True)  # detailed description of the case
@@ -153,6 +154,39 @@ class Assignment(models.Model):
     def __str__(self):
         return f"Assignment Case#{self.case_id_id} {self.from_user_id} -> {self.to_user_id} @ {self.timestamp:%Y-%m-%d %H:%M}"
     
+class RoleHierarchy(models.Model):
+    """
+    Dynamic role hierarchy system. Each role has a hierarchy_level.
+    Lower numbers = lower in hierarchy (Citizen = 1), higher numbers = higher (Mayor Office = 4).
+    Transfers can only go upward (to higher level roles).
+    """
+    role = models.OneToOneField(Group, on_delete=models.CASCADE, related_name="hierarchy")
+    hierarchy_level = models.PositiveIntegerField(unique=True, help_text="Higher number = higher in hierarchy")
+    can_transfer_to = models.ManyToManyField(
+        Group, 
+        blank=True, 
+        related_name="can_receive_from",
+        help_text="Roles this role can transfer cases to (upward only)"
+    )
+    can_assign = models.BooleanField(
+        default=True, 
+        help_text="Whether this role can assign cases to users"
+    )
+    can_change_status = models.BooleanField(
+        default=True,
+        help_text="Whether this role can change case status"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["hierarchy_level"]
+        verbose_name_plural = "Role Hierarchies"
+
+    def __str__(self):
+        return f"{self.role.name} (Level {self.hierarchy_level})"
+
+
 class Announcement(models.Model):
     title       = models.CharField(max_length=200)
     content     = models.TextField()
@@ -173,3 +207,41 @@ class Announcement(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Notification(models.Model):
+    """
+    System notifications for users.
+    Generated when assignments, transfers, announcements, or other important events occur.
+    """
+    NOTIFICATION_TYPES = [
+        ("assignment", "Assignment"),
+        ("transfer", "Transfer"),
+        ("announcement", "Announcement"),
+        ("case_status", "Case Status Change"),
+        ("case_assigned", "Case Assigned to You"),
+        ("case_transferred", "Case Transferred to Your Office"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Related object references (optional, for linking)
+    related_case_id = models.ForeignKey(Case, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    related_assignment_id = models.ForeignKey(Assignment, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    related_transfer_id = models.ForeignKey(Transfer, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    related_announcement_id = models.ForeignKey(Announcement, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "is_read", "-created_at"]),
+            models.Index(fields=["user", "-created_at"]),  # For pagination
+        ]
+
+    def __str__(self):
+        return f"{self.notification_type} - {self.title} ({'read' if self.is_read else 'unread'})"

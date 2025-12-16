@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -25,6 +24,15 @@ type ApiGroup = {
   is_active?: boolean;
   created_at?: string;
   users_count?: number | null; // backend may send null
+  permissions?: number[]; // permission IDs
+  permission_codenames?: string[];
+  permission_details?: Array<{
+    id: number;
+    codename: string;
+    name: string;
+    content_type__app_label: string;
+    content_type__model: string;
+  }>;
 };
 
 type Row = {
@@ -32,12 +40,20 @@ type Row = {
   name: string;
   is_active: boolean;
   created_at: string;
-  users_count: number | null; // we’ll compute if null
+  users_count: number | null; // we'll compute if null
 };
 
 type ApiUser = {
   id: number | string;
   groups?: Array<{ name: string } | string> | null;
+};
+
+type Permission = {
+  id: number;
+  codename: string;
+  name: string;
+  content_type__app_label: string;
+  content_type__model: string;
 };
 
 /* ---------------- Mapping helpers ---------------- */
@@ -56,6 +72,33 @@ export default function RolesPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+  // Check if user is Admin
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
+
+  useEffect(() => {
+    const checkAdmin = () => {
+      if (typeof window === "undefined") {
+        setCheckingAdmin(false);
+        return;
+      }
+      try {
+        const raw = localStorage.getItem("user_groups");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const groups = parsed.map((g) => (typeof g === "string" ? g : g?.name)).filter(Boolean);
+            setIsAdmin(groups.includes("Admin"));
+          }
+        }
+      } catch {
+        setIsAdmin(false);
+      }
+      setCheckingAdmin(false);
+    };
+    checkAdmin();
+  }, []);
 
   // table + search
   const [groups, setGroups] = useState<Row[]>([]);
@@ -84,18 +127,23 @@ export default function RolesPage() {
   const [successOpen, setSuccessOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
+  // permissions
+  const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [selectedPermissions, setSelectedPermissions] = useState<number[]>([]);
+
   /* ---------- Generic pagination-aware fetchers ---------- */
 
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
   const fetchAllPaginated = async <T,>(startUrl: string): Promise<T[]> => {
     let all: T[] = [];
     let nextUrl: string | null = startUrl;
 
     while (nextUrl) {
-      const res = await fetch(nextUrl, { headers: authHeaders, cache: "no-store" });
+      const res: Response = await fetch(nextUrl, { headers: authHeaders, cache: "no-store" });
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-      const data = await res.json();
+      const data: any = await res.json();
 
       if (Array.isArray(data)) {
         all = all.concat(data);
@@ -120,6 +168,25 @@ export default function RolesPage() {
 
   const fetchAllUsers = async (): Promise<ApiUser[]> => {
     return fetchAllPaginated<ApiUser>(`${API_URL}/users/`);
+  };
+
+  const loadAllPermissions = async () => {
+    if (!API_URL || !token) return;
+    try {
+      setLoadingPermissions(true);
+      const res: Response = await fetch(`${API_URL}/groups/all-permissions/`, {
+        headers: authHeaders,
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data: Permission[] = await res.json();
+        setAllPermissions(data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load permissions:", err);
+    } finally {
+      setLoadingPermissions(false);
+    }
   };
 
   /* ---------- Load groups and fix user counts if missing ---------- */
@@ -210,6 +277,7 @@ export default function RolesPage() {
 
   useEffect(() => {
     loadGroups();
+    loadAllPermissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -232,6 +300,8 @@ export default function RolesPage() {
 
     try {
       setCreating(true);
+      
+      // Create role
       const res = await fetch(`${API_URL}/groups/`, {
         method: "POST",
         headers: {
@@ -247,9 +317,30 @@ export default function RolesPage() {
         const msg = await res.text();
         throw new Error(msg || `Create failed: ${res.status}`);
       }
+      
+      const newGroup = await res.json();
+      
+      // Set permissions if any selected
+      if (selectedPermissions.length > 0) {
+        const permRes = await fetch(`${API_URL}/groups/${newGroup.id}/set_permissions/`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          body: JSON.stringify({
+            permission_ids: selectedPermissions,
+          }),
+        });
+        if (!permRes.ok) {
+          console.warn("Failed to set permissions, but role was created");
+        }
+      }
+      
       await loadGroups();
       setOpenCreate(false);
       setCreateForm({ name: "" });
+      setSelectedPermissions([]);
 
       setSuccessMsg("Role created successfully.");
       setSuccessOpen(true);
@@ -263,11 +354,29 @@ export default function RolesPage() {
 
   /* ---------- Details / Edit / Delete ---------- */
 
-  const openDetailsModal = (row: Row) => {
+  const openDetailsModal = async (row: Row) => {
     setSelected(row);
     setEditForm({ name: row.name });
     setDetailsError("");
     setConfirmDelete(false);
+    
+    // Load permissions for this role
+    if (API_URL && token) {
+      try {
+        const res = await fetch(`${API_URL}/groups/${row.id}/permissions/`, {
+          headers: authHeaders,
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const perms = await res.json();
+          setSelectedPermissions(perms.map((p: any) => p.id));
+        }
+      } catch (err) {
+        console.error("Failed to load role permissions:", err);
+        setSelectedPermissions([]);
+      }
+    }
+    
     setOpenDetails(true);
   };
 
@@ -281,6 +390,8 @@ export default function RolesPage() {
 
     try {
       setEditing(true);
+      
+      // Update role name
       const res = await fetch(`${API_URL}/groups/${selected.id}/`, {
         method: "PATCH",
         headers: {
@@ -295,6 +406,23 @@ export default function RolesPage() {
         const msg = await res.text();
         throw new Error(msg || `Update failed: ${res.status}`);
       }
+      
+      // Update permissions
+      const permRes = await fetch(`${API_URL}/groups/${selected.id}/set_permissions/`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          permission_ids: selectedPermissions,
+        }),
+      });
+      if (!permRes.ok) {
+        const msg = await permRes.text();
+        throw new Error(msg || `Failed to update permissions: ${permRes.status}`);
+      }
+      
       await loadGroups();
       setOpenDetails(false);
 
@@ -339,6 +467,32 @@ export default function RolesPage() {
 
   /* ---------- Render ---------- */
 
+  // Redirect non-admin users
+  useEffect(() => {
+    if (!checkingAdmin && !isAdmin) {
+      window.location.href = "/dashboard";
+    }
+  }, [checkingAdmin, isAdmin]);
+
+  if (checkingAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-sm text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-gray-600">You do not have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <Breadcrumb pageName="Roles" />
@@ -361,6 +515,8 @@ export default function RolesPage() {
             className="px-4 py-2 rounded text-white bg-blue-600 hover:bg-blue-700"
             onClick={() => {
               setCreateError("");
+              setCreateForm({ name: "" });
+              setSelectedPermissions([]);
               setOpenCreate(true);
             }}
           >
@@ -441,19 +597,83 @@ export default function RolesPage() {
         </Table>
       </div>
 
-      {/* Create Role Modal (no description) */}
+      {/* Create Role Modal */}
       <AnimatedModal
         open={openCreate}
-        onClose={() => setOpenCreate(false)}
+        onClose={() => {
+          setOpenCreate(false);
+          setCreateForm({ name: "" });
+          setSelectedPermissions([]);
+        }}
         title="Add New Role (Group)"
+        maxWidthClassName="max-w-4xl"
       >
         <form className="space-y-4" onSubmit={handleCreate}>
-          <Input
-            placeholder="Role name *"
-            value={createForm.name}
-            onChange={(e) => setCreateForm((s) => ({ ...s, name: e.target.value }))}
-            required
-          />
+          <div>
+            <label className="mb-1 block text-sm font-medium">Role Name *</label>
+            <Input
+              placeholder="Role name"
+              value={createForm.name}
+              onChange={(e) => setCreateForm((s) => ({ ...s, name: e.target.value }))}
+              required
+            />
+          </div>
+          
+          <div>
+            <label className="mb-2 block text-sm font-medium">Permissions</label>
+            {loadingPermissions ? (
+              <div className="text-sm text-gray-500">Loading permissions...</div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto rounded border border-gray-300 p-3 dark:border-dark-3 dark:bg-dark-2">
+                {allPermissions.length === 0 ? (
+                  <div className="text-sm text-gray-500">No permissions available</div>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(
+                      allPermissions.reduce((acc: Record<string, Permission[]>, perm) => {
+                        const key = `${perm.content_type__app_label}.${perm.content_type__model}`;
+                        if (!acc[key]) acc[key] = [];
+                        acc[key].push(perm);
+                        return acc;
+                      }, {})
+                    ).map(([model, perms]) => (
+                      <div key={model} className="border-b border-gray-200 pb-2 last:border-0 dark:border-dark-3">
+                        <div className="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-400">
+                          {model}
+                        </div>
+                        <div className="ml-2 space-y-1">
+                          {perms.map((perm) => (
+                            <label
+                              key={perm.id}
+                              className="flex items-center gap-2 text-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPermissions.includes(perm.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedPermissions([...selectedPermissions, perm.id]);
+                                  } else {
+                                    setSelectedPermissions(
+                                      selectedPermissions.filter((id) => id !== perm.id)
+                                    );
+                                  }
+                                }}
+                                disabled={creating}
+                                className="rounded"
+                              />
+                              <span className="text-xs">{perm.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
           {createError && <div className="text-sm text-red-500">{createError}</div>}
           <Button
             type="submit"
@@ -465,12 +685,15 @@ export default function RolesPage() {
         </form>
       </AnimatedModal>
 
-      {/* Details / Edit / Delete Modal (no description) */}
+      {/* Details / Edit / Delete Modal */}
       <AnimatedModal
         open={openDetails}
-        onClose={() => setOpenDetails(false)}
+        onClose={() => {
+          setOpenDetails(false);
+          setSelectedPermissions([]);
+        }}
         title={selected ? `Manage Role — ${selected.name}` : "Manage Role"}
-        maxWidthClassName="max-w-xl"
+        maxWidthClassName="max-w-4xl"
       >
         {!selected ? (
           <div className="text-sm text-gray-500 dark:text-dark-6">No role selected.</div>
@@ -481,7 +704,63 @@ export default function RolesPage() {
               <Input
                 value={editForm.name}
                 onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))}
+                disabled={editing}
               />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">Permissions</label>
+              {loadingPermissions ? (
+                <div className="text-sm text-gray-500">Loading permissions...</div>
+              ) : (
+                <div className="max-h-96 overflow-y-auto rounded border border-gray-300 p-3 dark:border-dark-3 dark:bg-dark-2">
+                  {allPermissions.length === 0 ? (
+                    <div className="text-sm text-gray-500">No permissions available</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.entries(
+                        allPermissions.reduce((acc: Record<string, Permission[]>, perm) => {
+                          const key = `${perm.content_type__app_label}.${perm.content_type__model}`;
+                          if (!acc[key]) acc[key] = [];
+                          acc[key].push(perm);
+                          return acc;
+                        }, {})
+                      ).map(([model, perms]) => (
+                        <div key={model} className="border-b border-gray-200 pb-2 last:border-0 dark:border-dark-3">
+                          <div className="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-400">
+                            {model}
+                          </div>
+                          <div className="ml-2 space-y-1">
+                            {perms.map((perm) => (
+                              <label
+                                key={perm.id}
+                                className="flex items-center gap-2 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(perm.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedPermissions([...selectedPermissions, perm.id]);
+                                    } else {
+                                      setSelectedPermissions(
+                                        selectedPermissions.filter((id) => id !== perm.id)
+                                      );
+                                    }
+                                  }}
+                                  disabled={editing}
+                                  className="rounded"
+                                />
+                                <span className="text-xs">{perm.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {detailsError && <div className="text-sm text-red-500">{detailsError}</div>}
@@ -500,7 +779,7 @@ export default function RolesPage() {
                   type="button"
                   className={`${confirmDelete ? "bg-red-700" : "bg-red-600"} text-white hover:bg-red-700`}
                   onClick={() => (confirmDelete ? handleDelete() : setConfirmDelete(true))}
-                  disabled={deleting}
+                  disabled={deleting || editing}
                 >
                   {deleting ? "Deleting..." : confirmDelete ? "Click to Confirm" : "Delete"}
                 </Button>

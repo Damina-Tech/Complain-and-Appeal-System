@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { RefreshCcw, Eye } from "lucide-react";
+import { RefreshCcw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 
 /* ===================== Types ===================== */
 
@@ -142,6 +142,10 @@ export default function MyAssignedCasesPage() {
 
   // Search
   const [search, setSearch] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
 
   // Global ticking "now" to power live countdown (1s)
   const [now, setNow] = useState<Date>(() => {
@@ -289,6 +293,17 @@ export default function MyAssignedCasesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignments, search, titleMap, officeByRepUserId, now]); // include "now" so countdown rerenders rows smoothly
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedData = filtered.slice(startIndex, endIndex);
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filtered.length]);
+
   return (
     <>
       <Breadcrumb pageName="My Assigned Cases"/>
@@ -351,7 +366,7 @@ export default function MyAssignedCasesPage() {
               </TableRow>
             )}
 
-            {!loading && !error && filtered.map((r) => {
+            {!loading && !error && paginatedData.map((r) => {
               const cid = caseIdOf(r);
               const deadline = deadlineInfoOfRow(r);
               return (
@@ -391,6 +406,60 @@ export default function MyAssignedCasesPage() {
             })}
           </TableBody>
         </Table>
+
+        {/* Pagination */}
+        {!loading && !error && filtered.length > itemsPerPage && (
+          <div className="mt-4 flex items-center justify-between border-t border-stroke pt-4 dark:border-dark-3">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {startIndex + 1} to {Math.min(endIndex, filtered.length)} of {filtered.length} assignments
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      className={currentPage === pageNum ? "bg-blue-600 text-white" : ""}
+                      onClick={() => setCurrentPage(pageNum)}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

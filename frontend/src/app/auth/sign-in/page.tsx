@@ -20,7 +20,7 @@ export default function SignIn() {
                 Welcome back
               </h1>
               <p className="mt-1 text-sm text-gray-600 dark:text-dark-6">
-                Sign in to continue to the Harari Regional Complaint & Appeal System.
+                Sign in to continue to the Chiro City Complaint & Appeal System.
               </p>
             </div>
 
@@ -99,9 +99,9 @@ export default function SignIn() {
               </div>
 
               <div className="mt-8 flex items-center gap-3 text-xs text-white/60">
-                <span>© {new Date().getFullYear()} Harari Region</span>
+                <span>© {new Date().getFullYear()} Chiro City</span>
                 <span>•</span>
-                <span>Service Desk: support@harari.gov</span>
+                <span>Service Desk: support@ciroocity.com</span>
               </div>
             </div>
           </div>

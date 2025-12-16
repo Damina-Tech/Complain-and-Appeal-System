@@ -15,6 +15,7 @@ type InputGroupProps = {
   name?: string;
   icon?: React.ReactNode;
   iconPosition?: "left" | "right";
+  endIcon?: React.ReactNode;
   height?: "sm" | "default";
   defaultValue?: string;
 };
@@ -29,6 +30,7 @@ const InputGroup: React.FC<InputGroupProps> = ({
   active,
   handleChange,
   icon,
+  iconPosition = "left",
   ...props
 }) => {
   const id = useId();
@@ -45,10 +47,7 @@ const InputGroup: React.FC<InputGroupProps> = ({
 
       <div
         className={cn(
-          "relative mt-3 [&_svg]:absolute [&_svg]:top-1/2 [&_svg]:-translate-y-1/2",
-          props.iconPosition === "left"
-            ? "[&_svg]:left-4.5"
-            : "[&_svg]:right-4.5",
+          "relative mt-3",
         )}
       >
         <input
@@ -64,7 +63,8 @@ const InputGroup: React.FC<InputGroupProps> = ({
             type === "file"
               ? getFileStyles(props.fileStyleVariant!)
               : "px-5.5 py-3 text-dark placeholder:text-dark-6 dark:text-white",
-            props.iconPosition === "left" && "pl-12.5",
+            (icon && iconPosition === "left") && "pl-12.5",
+            props.endIcon && "pr-12.5",
             props.height === "sm" && "py-2.5",
           )}
           required={required}
@@ -72,7 +72,22 @@ const InputGroup: React.FC<InputGroupProps> = ({
           data-active={active}
         />
 
+        {icon && (
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1/2 -translate-y-1/2",
+              iconPosition === "left" ? "left-4.5" : "right-4.5",
+            )}
+          >
         {icon}
+          </span>
+        )}
+
+        {props.endIcon && (
+          <span className="absolute right-4.5 top-1/2 -translate-y-1/2">
+            {props.endIcon}
+          </span>
+        )}
       </div>
     </div>
   );

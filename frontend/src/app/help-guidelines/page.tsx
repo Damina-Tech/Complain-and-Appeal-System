@@ -37,10 +37,10 @@ export default function HelpGuidelinesPage() {
           {/* HERO */}
           <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-dark-3 dark:bg-gray-dark">
             <h1 className="mb-2 text-2xl font-bold text-dark dark:text-white">
-              Harari Regional Complaint & Appeal System — <span className={accent}>Help & Guidelines</span>
+              Chiro City Complaint & Appeal System — <span className={accent}>Help & Guidelines</span>
             </h1>
             <p className="text-gray-600 dark:text-dark-6">
-              This guide explains how the system moves Harari Region’s complaint and appeal handling from paper-based
+              This guide explains how the system moves Chiro City’s complaint and appeal handling from paper-based
               processes to a fully digital workflow—improving transparency, speed, and decision-making across city
               administration and civil service.
             </p>

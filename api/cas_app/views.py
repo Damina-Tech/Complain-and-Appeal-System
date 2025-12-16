@@ -13,6 +13,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes
 from rest_framework_simplejwt.tokens import RefreshToken
+from urllib.parse import urljoin
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import *  # Ensure correct import path
@@ -115,51 +116,92 @@ def change_password(request):
 #forget password function  
 @api_view(['POST'])
 def forget_password(request):
-    if request.method == "POST":
-        headers = request.data
-
-        print(headers)
-        email = headers.get('email')  # Assuming the key is 'email' in the received data
-
-        try:
-            user = User.objects.get(username=email)
-            #user_profile = UserProfile.objects.get(user=user)
-            if user is not None and user.is_active and user.is_deleted != True:
-                token = default_token_generator.make_token(user)
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
-                password_reset_url = f"http://localhost:3000/changepassword/{uid}/{token}"
-                
-                print(password_reset_url)
-                send_mail(
-                    'Password Reset Request',
-                    f'Please click on the link to reset your password: {password_reset_url}',
-                    settings.EMAIL_HOST_USER,
-                    [email],
-                    fail_silently=False,
-                )
-
-                return Response({'message': 'Password reset link sent to your email'}, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({'error': 'User with this email does not exist'}, status=status.HTTP_400_BAD_REQUEST)
-    else:
+    if request.method != "POST":
         return Response({'error': 'Only POST method is allowed'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Find user by email or username (case-insensitive)
+    user = (
+        User.objects.filter(email__iexact=email).first()
+        or User.objects.filter(username__iexact=email).first()
+    )
+
+    # Check if user exists, is active, and not deleted
+    if not user:
+        # Don't reveal if user exists or not for security (same message for both cases)
+        return Response(
+            {'message': 'If an account exists for that email address, a reset link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+    
+    if not user.is_active:
+        return Response(
+            {'error': 'Your account is inactive. Please contact support.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    
+    if getattr(user, "is_deleted", False):
+        # Don't reveal if user exists or not for security
+        return Response(
+            {'message': 'If an account exists for that email address, a reset link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+    # Generate reset token and URL
+    token = default_token_generator.make_token(user)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    frontend_base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
+    password_reset_path = f"/auth/reset-password/{uid}/{token}"
+    password_reset_url = urljoin(frontend_base + "/", password_reset_path.lstrip("/"))
+    
+    # Get email settings from environment
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", getattr(settings, "EMAIL_HOST_USER", "noreply@example.com"))
+    
+    try:
+        send_mail(
+            subject='Password Reset Request',
+            message=f'Please click on the link to reset your password: {password_reset_url}',
+            from_email=from_email,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception as e:
+        # Log error but don't expose internal details to user
+        print(f"Error sending password reset email: {e}")
+        return Response(
+            {'error': 'Failed to send password reset email. Please try again later.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # Always return success message (security best practice - don't reveal if user exists)
+    return Response(
+        {'message': 'If an account exists for that email address, a reset link has been sent.'},
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['POST'])
 def reset_password(request):
     uidb64 = request.data.get("userId")
     token = request.data.get("token")
+    new_password = request.data.get("newPassword")
+
+    if not uidb64 or not token or not new_password:
+        return Response(
+            {'error': 'userId, token, and newPassword are required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     
     try:
         uid = urlsafe_base64_decode(uidb64).decode()
         user = User.objects.get(pk=uid)
 
         if default_token_generator.check_token(user, token):
-            # Assuming new password is sent in request.data
-            new_password = request.data.get('newPassword')
             user.set_password(new_password)
             user.save()
-            print("doneeeeeeeeeeeeeeee")
             return Response({'message': 'Password has been reset.'})
         else:
             return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)

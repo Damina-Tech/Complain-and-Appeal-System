@@ -13,9 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import Dialog from "@/components/ui/Dialog";
 import { Eye, Pencil, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
 
@@ -38,11 +36,23 @@ type ApiUser = {
 type UserRow = {
   id: number | string;
   name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   nationalId: string;
   roles: string[];
   status: string;
+};
+
+type EditForm = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number: string;
+  national_id: string;
+  status: string;
+  group: string;
 };
 
 type NewUserForm = {
@@ -60,9 +70,10 @@ const statusBadge: Record<string, string> = {
   suspended: "bg-red-200 text-red-800",
 };
 
+const PAGE_SIZE = 10;
+
 /* ========= Page ========= */
 export default function UsersPage() {
-  const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   // table + filters
@@ -70,6 +81,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   // roles (groups) for filter + create
   const [roles, setRoles] = useState<string[]>([]);
@@ -83,6 +95,8 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState("");
   const [successBanner, setSuccessBanner] = useState<string>("");
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // create form (status always 'active'; hidden)
   const [form, setForm] = useState<NewUserForm>({
@@ -93,6 +107,18 @@ export default function UsersPage() {
     national_id: "",
     group: "", // set default later based on current user role
   });
+  const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone_number: "",
+    national_id: "",
+    status: "active",
+    group: "",
+  });
+  const [editError, setEditError] = useState("");
+  const [updating, setUpdating] = useState(false);
 
   // auth + current user role
   const token =
@@ -113,7 +139,39 @@ export default function UsersPage() {
     }
   }, []);
 
+  // Check user permissions dynamically
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [currentUserOffice, setCurrentUserOffice] = useState<number | null>(null);
+
+  useEffect(() => {
+    const loadUserInfo = async () => {
+      if (!API_URL || !token) return;
+      try {
+        const res = await fetch(`${API_URL}/auth/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Permissions are typically not returned in /auth/me, but we can check groups
+          // For now, we'll use group-based logic
+          setCurrentUserOffice(data.office || null);
+        }
+      } catch (e) {
+        console.error("Failed to load user info:", e);
+      }
+    };
+    loadUserInfo();
+  }, [API_URL, token]);
+
   const isDirector = currentUserGroups.includes("Director");
+  const isMayorOffice = currentUserGroups.includes("Mayor Office");
+  const isFocalPerson = currentUserGroups.some((g) => g.includes("Focal Person"));
+  
+  // Dynamic permission check: Director and Mayor Office can assign any role
+  // Focal Person can only assign Citizen role
+  const canAssignAnyRole = isDirector || isMayorOffice;
+  const canCreateUser = canAssignAnyRole || isFocalPerson;
 
   // ---- Load roles and users ----
   const mapUser = (u: ApiUser): UserRow => {
@@ -130,6 +188,8 @@ export default function UsersPage() {
     return {
       id: u.id,
       name,
+      firstName: u.first_name || "",
+      lastName: u.last_name || "",
       email: u.email || u.username || "—",
       phone: u.phone_number || "—",
       nationalId: u.national_id || "—",
@@ -175,7 +235,7 @@ export default function UsersPage() {
       // default creation role:
       setForm((s) => ({
         ...s,
-        group: isDirector
+        group: canAssignAnyRole
           ? (namesFrom(rows).includes("Citizen") ? "Citizen" : (roles[0] || "Citizen"))
           : "Citizen",
       }));
@@ -233,8 +293,36 @@ export default function UsersPage() {
       return matchSearch && matchRole && matchStatus;
     });
   }, [users, search, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roleFilter, statusFilter, users]);
+
+  const statusChoices = useMemo(
+    () => statusOptions.filter((s) => s !== "all"),
+    [statusOptions]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginated = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
+
+  const startItem = filtered.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
+  const endItem = filtered.length
+    ? Math.min(filtered.length, currentPage * PAGE_SIZE)
+    : 0;
   const [successOpen, setSuccessOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+  const [successTitle, setSuccessTitle] = useState("Success");
   // ---- Create user (email as username, status=active; role auto unless director) ----
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,6 +344,9 @@ export default function UsersPage() {
     try {
       setCreating(true);
 
+      // Focal Person can only create Citizen users
+      const assignedRole = canAssignAnyRole ? (form.group || "Citizen") : "Citizen";
+      
       const payload: Record<string, any> = {
         username: form.email,       // email as username
         email: form.email,
@@ -264,7 +355,7 @@ export default function UsersPage() {
         phone_number: form.phone_number || undefined,
         national_id: form.national_id || undefined,
         status: "active",
-        groups: [isDirector ? form.group || "Citizen" : "Citizen"],
+        groups: [assignedRole],
       };
 
       const res = await fetch(`${API_URL}/users/`, {
@@ -290,6 +381,7 @@ export default function UsersPage() {
       setUsers((Array.isArray(rjson) ? rjson : []).map(mapUser));
 
       // success banner for 3s
+      setSuccessTitle("User Created");
     setSuccessMsg("User created successfully. A reset password email will be sent if configured.");
     setSuccessOpen(true);        // open success modal
 
@@ -300,13 +392,83 @@ export default function UsersPage() {
         email: "",
         phone_number: "",
         national_id: "",
-        group: isDirector ? (roles[0] || "Citizen") : "Citizen",
+        group: canAssignAnyRole ? (roles[0] || "Citizen") : "Citizen",
       });
       setOpenDialog(false);
     } catch (err: any) {
       setFormError(err?.message || "Failed to create user");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    const trimmedEmail = editForm.email.trim();
+    if (!trimmedEmail) {
+      setEditError("Email is required.");
+      return;
+    }
+
+    if (!API_URL) {
+      setEditError("NEXT_PUBLIC_API_URL is not set");
+      return;
+    }
+    if (!token) {
+      setEditError("You are not authenticated. Please sign in.");
+      return;
+    }
+
+    try {
+      setUpdating(true);
+      setEditError("");
+
+      const payload: Record<string, any> = {
+        first_name: editForm.first_name.trim(),
+        last_name: editForm.last_name.trim(),
+        email: trimmedEmail,
+        phone_number: editForm.phone_number.trim() || null,
+        national_id: editForm.national_id.trim() || null,
+        status: editForm.status || "active",
+      };
+
+      if (canAssignAnyRole) {
+        payload.groups = editForm.group ? [editForm.group] : [];
+      } else if (isFocalPerson) {
+        // Focal Person can only assign Citizen role
+        const citizenGroup = roles.find((r) => r === "Citizen");
+        payload.groups = citizenGroup ? [citizenGroup] : [];
+      }
+
+      const res = await fetch(`${API_URL}/users/${selectedUser.id}/`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || `Update failed: ${res.status}`);
+      }
+
+      const updated: ApiUser = await res.json();
+      const mapped = mapUser(updated);
+
+      setUsers((prev) => prev.map((u) => (u.id === mapped.id ? mapped : u)));
+      setSelectedUser(mapped);
+      setSuccessTitle("User Updated");
+      setSuccessMsg("User updated successfully.");
+      setSuccessOpen(true);
+      setEditModalOpen(false);
+    } catch (err: any) {
+      setEditError(err?.message || "Failed to update user");
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -376,7 +538,7 @@ export default function UsersPage() {
               // default role when opening the modal
               setForm((s) => ({
                 ...s,
-                group: isDirector ? (s.group || roles[0] || "Citizen") : "Citizen",
+                group: canAssignAnyRole ? (s.group || roles[0] || "Citizen") : "Citizen",
               }));
             }}
           >
@@ -427,7 +589,7 @@ export default function UsersPage() {
 
             {!loading &&
               !pageError &&
-              filtered.map((u) => (
+              paginated.map((u) => (
                 <TableRow
                   key={u.id}
                   className="text-center text-base font-medium text-dark dark:text-white"
@@ -452,7 +614,10 @@ export default function UsersPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => router.push(`/users/${u.id}/view`)}
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setViewModalOpen(true);
+                        }}
                         title="View"
                       >
                         <Eye className="h-4 w-4 text-blue-500" />
@@ -460,7 +625,20 @@ export default function UsersPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => router.push(`/users/${u.id}/edit`)}
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setEditForm({
+                            first_name: u.firstName,
+                            last_name: u.lastName,
+                            email: u.email === "—" ? "" : u.email,
+                            phone_number: u.phone === "—" ? "" : u.phone,
+                            national_id: u.nationalId === "—" ? "" : u.nationalId,
+                            status: u.status || "active",
+                            group: u.roles.find((role) => role !== "—") || "",
+                          });
+                          setEditError("");
+                          setEditModalOpen(true);
+                        }}
                         title="Edit"
                       >
                         <Pencil className="h-4 w-4 text-green-500" />
@@ -472,6 +650,36 @@ export default function UsersPage() {
           </TableBody>
         </Table>
       </div>
+
+      {!loading && !pageError && filtered.length > PAGE_SIZE && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Showing {startItem.toLocaleString()}-{endItem.toLocaleString()} of{" "}
+            {filtered.length.toLocaleString()}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="px-3"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              className="px-3"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Add New User Modal */}
       <AnimatedModal
@@ -519,7 +727,7 @@ export default function UsersPage() {
             />
 
             {/* Role: Citizen for non-directors; dropdown for Director */}
-            {isDirector ? (
+            {canAssignAnyRole ? (
               <select
                 className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
                 value={form.group}
@@ -551,10 +759,205 @@ export default function UsersPage() {
           </Button>
         </form>
       </AnimatedModal>
+
+      {/* View User Modal */}
+      <AnimatedModal
+        open={viewModalOpen}
+        onClose={() => {
+          setViewModalOpen(false);
+          setSelectedUser(null);
+        }}
+        title="User Details"
+      >
+        {selectedUser && (
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Name
+              </p>
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                {selectedUser.name}
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Email
+                </p>
+                <p className="font-medium">{selectedUser.email}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Phone
+                </p>
+                <p className="font-medium">{selectedUser.phone}</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  National ID
+                </p>
+                <p className="font-medium">{selectedUser.nationalId}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Status
+                </p>
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                    statusBadge[selectedUser.status] || "bg-gray-200 text-gray-800"
+                  }`}
+                >
+                  {selectedUser.status[0].toUpperCase() + selectedUser.status.slice(1)}
+                </span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Roles
+              </p>
+              <p className="font-medium">
+                {selectedUser.roles.length ? selectedUser.roles.join(", ") : "—"}
+              </p>
+            </div>
+          </div>
+        )}
+      </AnimatedModal>
+
+      {/* Edit User Modal */}
+      <AnimatedModal
+        open={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditError("");
+          setSelectedUser(null);
+        }}
+        title="Edit User"
+      >
+        {selectedUser && (
+          <form className="space-y-4" onSubmit={handleUpdateUser}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                placeholder="First name"
+                value={editForm.first_name}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, first_name: e.target.value }))
+                }
+                disabled={updating}
+              />
+              <Input
+                placeholder="Last name"
+                value={editForm.last_name}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, last_name: e.target.value }))
+                }
+                disabled={updating}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                placeholder="Email"
+                type="email"
+                value={editForm.email}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, email: e.target.value }))
+                }
+                disabled={updating}
+                required
+              />
+              <Input
+                placeholder="Phone number"
+                value={editForm.phone_number}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, phone_number: e.target.value }))
+                }
+                disabled={updating}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                placeholder="National ID"
+                value={editForm.national_id}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, national_id: e.target.value }))
+                }
+                disabled={updating}
+              />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Status
+                </label>
+                <select
+                  className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+                  value={editForm.status}
+                  onChange={(e) =>
+                    setEditForm((s) => ({ ...s, status: e.target.value }))
+                  }
+                  disabled={updating}
+                >
+                  {statusChoices.map((status) => (
+                    <option key={status} value={status}>
+                      {status[0].toUpperCase() + status.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {canAssignAnyRole ? (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Role
+                </label>
+                <select
+                  className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+                  value={editForm.group}
+                  onChange={(e) =>
+                    setEditForm((s) => ({ ...s, group: e.target.value }))
+                  }
+                  disabled={updating}
+                >
+                  <option value="">No role</option>
+                  {roles.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Role
+                </label>
+                <Input value={selectedUser.roles.join(", ")} readOnly />
+              </div>
+            )}
+            {editError && <div className="text-sm text-red-500">{editError}</div>}
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditError("");
+                  setSelectedUser(null);
+                }}
+                disabled={updating}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-blue-600 text-white" disabled={updating}>
+                {updating ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </AnimatedModal>
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="User Created"
+        title={successTitle}
         message={successMsg}
         autoCloseMs={6000}
     />

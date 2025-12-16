@@ -10,12 +10,17 @@ router.register(r'offices', OfficeViewSet, basename='office')
 router.register(r'transfers', TransferViewSet, basename='transfer')
 router.register(r'assignments', AssignmentViewSet, basename='assignment')
 router.register(r"groups", GroupViewSet, basename="group")
+router.register(r"role-hierarchy", RoleHierarchyViewSet, basename="role-hierarchy")
 router.register(r'reports', ReportsViewSet, basename='reports')
 router.register(r'announcements', AnnouncementViewSet, basename='announcement')
+router.register(r'feedbacks', CaseFeedbackViewSet, basename='feedback')
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
     path("", include(router.urls)),
     path('login/', user_login, name='user_login'),
     path('logout/', logout_view, name='logout_view'),
+    path('password/forgot/', forget_password, name='forget_password'),
+    path('password/reset/', reset_password, name='reset_password'),
     path('auth/me/', current_user, name='current_user'),
 ]

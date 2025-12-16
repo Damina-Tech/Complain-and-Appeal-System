@@ -14,15 +14,31 @@ export default function ProtectedWrapper({ children }: { children: React.ReactNo
     setHasToken(!!token);
     setIsReady(true);
 
+    // Don't redirect if on auth routes or root (root handles its own redirect)
+    const isAuthRoute = pathname?.startsWith("/auth");
+    const isRootRoute = pathname === "/";
+    
+    if (isAuthRoute || isRootRoute) {
+      return;
+    }
+
     const loginPath = "/auth/sign-in";
-    if (!token && pathname !== loginPath) {
+    if (!token) {
       router.replace(loginPath);
     }
   }, [router, pathname]);
 
   if (!isReady) return null;
+  
+  // Don't protect auth routes or root
+  const isAuthRoute = pathname?.startsWith("/auth");
+  const isRootRoute = pathname === "/";
+  if (isAuthRoute || isRootRoute) {
+    return <>{children}</>;
+  }
+
   const loginPath = "/auth/sign-in";
-  if (!hasToken && pathname !== loginPath) return null;
+  if (!hasToken) return null;
 
   return <>{children}</>;
 }

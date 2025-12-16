@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
-import { Settings, ArrowRight, RefreshCcw } from "lucide-react";
+import { Settings, ArrowRight, RefreshCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 /* ===================== Types ===================== */
@@ -142,6 +142,10 @@ export default function CaseActivityPage() {
   // Success modal
   const [successOpen, setSuccessOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
 
   const officeOptions = useMemo(
     () => offices.map((o) => ({ id: String(o.id), label: o.name })).sort((a, b) => a.label.localeCompare(b.label)),
@@ -374,6 +378,17 @@ export default function CaseActivityPage() {
 
   const rows = mode === "transfer" ? transfers : assignments;
 
+  // Pagination calculations
+  const totalPages = Math.ceil(rows.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedData = rows.slice(startIndex, endIndex);
+
+  // Reset to page 1 when mode changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [mode]);
+
   // Build modal title with case title included
   const modalTitle =
     !selectedRow
@@ -381,7 +396,7 @@ export default function CaseActivityPage() {
       : `${mode === "transfer" ? "Re-Transfer" : "Re-Assign"} — ${caseTitleOf(selectedRow)}`;
   
       
-
+  
   /* ===================== Render ===================== */
 
   return (
@@ -469,7 +484,7 @@ export default function CaseActivityPage() {
 
             {!loadingList &&
               !error &&
-              rows.map((r) => (
+              paginatedData.map((r) => (
                 <TableRow key={(r as any).id} className="text-center text-base font-medium text-dark dark:text-white">
                   <TableCell className="!text-left">
                     <div className="flex items-center justify-between gap-2">
@@ -517,6 +532,60 @@ export default function CaseActivityPage() {
               ))}
           </TableBody>
         </Table>
+
+        {/* Pagination */}
+        {!loadingList && !error && rows.length > itemsPerPage && (
+          <div className="mt-4 flex items-center justify-between border-t border-stroke pt-4 dark:border-dark-3">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {startIndex + 1} to {Math.min(endIndex, rows.length)} of {rows.length} {mode === "transfer" ? "transfers" : "assignments"}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      className={currentPage === pageNum ? "bg-blue-600 text-white" : ""}
+                      onClick={() => setCurrentPage(pageNum)}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Manage Modal (re-transfer / re-assign) */}
