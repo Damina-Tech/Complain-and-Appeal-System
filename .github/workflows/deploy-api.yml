@@ -77,11 +77,11 @@ jobs:
       - name: Deploy to cPanel via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ${{ secrets.API_FTP_SERVER || secrets.FTP_SERVER }}
+          username: ${{ secrets.API_FTP_USERNAME }}
+          password: ${{ secrets.API_FTP_PASSWORD }}
           local-dir: ./deploy-api
-          server-dir: ${{ secrets.API_DEPLOY_PATH || 'api' }}
+          server-dir: ${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com' }}
           protocol: ftp
           dangerous-clean-slate: false
           exclude: |
@@ -100,7 +100,7 @@ jobs:
             **/.env*
 
       - name: Run migrations via SSH (Optional)
-        if: ${{ secrets.SSH_HOST != '' }}
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -108,6 +108,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           script: |
-            cd ${{ secrets.API_DEPLOY_PATH || 'api' }}
+            cd ${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com' }}
             source venv/bin/activate || true
             python manage.py migrate --noinput || true

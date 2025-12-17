@@ -64,11 +64,11 @@ jobs:
       - name: Deploy to cPanel via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ${{ secrets.FRONTEND_FTP_SERVER || secrets.FTP_SERVER }}
+          username: ${{ secrets.FRONTEND_FTP_USERNAME }}
+          password: ${{ secrets.FRONTEND_FTP_PASSWORD }}
           local-dir: ./deploy-frontend
-          server-dir: ${{ secrets.FRONTEND_DEPLOY_PATH || 'public_html' }}
+          server-dir: ${{ secrets.FRONTEND_DEPLOY_PATH || 'komi.ciroocity.com' }}
           protocol: ftp
           dangerous-clean-slate: false
           exclude: |
