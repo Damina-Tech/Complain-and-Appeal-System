@@ -20,7 +20,7 @@ Both are in the same repository but different directories:
    - `komi.ciroocity.com` (for frontend)
    - `komi-api.ciroocity.com` (for API)
 
-## Step 1: GitHub Secrets Setup this is the first steps of all
+## Step 1: GitHub Secrets Setup
 
 Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions**, and add the following secrets:
 
