@@ -69,6 +69,12 @@ export default function ComplaintAppealPage() {
   const [error, setError] = useState<string>("");
 
   const [creating, setCreating] = useState<boolean>(false);
+  const [formErrors, setFormErrors] = useState<{
+    title?: string;
+    description?: string;
+    category?: string;
+    general?: string;
+  }>({});
   const [form, setForm] = useState<{
     title: string;
     description: string;
@@ -484,7 +490,23 @@ export default function ComplaintAppealPage() {
       {/* ✅ Add New Case Modal (Animated) */}
       <AnimatedModal
         open={openDialog}
-        onClose={() => setOpenDialog(false)}
+        onClose={() => {
+          setOpenDialog(false);
+          setFormErrors({});
+          setForm({
+            title: "",
+            description: "",
+            category: "",
+            attachments: [],
+            status: "pending",
+            office: "",
+            citizenId:
+              typeof window !== "undefined"
+                ? localStorage.getItem("user_id")
+                : null,
+            reported_by: null,
+          });
+        }}
         title="Add New Case"
         maxWidthClassName="max-w-2xl"
       >
@@ -492,23 +514,46 @@ export default function ComplaintAppealPage() {
           className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault();
+            
+            // Clear previous errors
+            setFormErrors({});
+            
+            // Validation
+            const errors: { title?: string; description?: string; category?: string } = {};
+            if (!form.title || form.title.trim() === "") {
+              errors.title = "Title is required";
+            }
+            if (!form.description || form.description.trim() === "") {
+              errors.description = "Description is required";
+            }
+            if (!form.category || form.category.trim() === "") {
+              errors.category = "Category is required";
+            }
+            
+            if (Object.keys(errors).length > 0) {
+              setFormErrors(errors);
+              return;
+            }
+            
             if (!API_URL) {
-              setError("NEXT_PUBLIC_API_URL is not set");
+              setFormErrors({ general: "NEXT_PUBLIC_API_URL is not set" });
               return;
             }
             const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
             if (!token) {
-              setError("You are not authenticated. Please sign in.");
+              setFormErrors({ general: "You are not authenticated. Please sign in." });
               return;
             }
+            
             try {
               setCreating(true);
+              setFormErrors({});
               
               // Handle file uploads with FormData
               const formData = new FormData();
-              formData.append("title", form.title || `New Case ${Date.now()}`);
-              formData.append("description", form.description || "");
-              formData.append("category_id", form.category || "complaint");
+              formData.append("title", form.title.trim());
+              formData.append("description", form.description.trim());
+              formData.append("category_id", form.category);
               formData.append("status", form.status || "pending");
               if (form.office) formData.append("office_id", form.office);
               if (form.citizenId) formData.append("citizen_id", form.citizenId);
@@ -518,7 +563,6 @@ export default function ComplaintAppealPage() {
               if (form.attachments && form.attachments.length > 0) {
                 form.attachments.forEach((att) => {
                   if (att.file) {
-                    // Send as actual file - backend will convert to base64
                     formData.append("attachments", att.file);
                   }
                 });
@@ -531,11 +575,79 @@ export default function ComplaintAppealPage() {
                 },
                 body: formData,
               });
+              
               if (!res.ok) {
-                const msg = await res.text();
-                throw new Error(msg || `Create failed: ${res.status}`);
+                let errorMessage = `Failed to create case (${res.status})`;
+                const fieldErrs: { [key: string]: string } = {};
+                
+                try {
+                  const errorData = await res.json();
+                  // Handle Django REST Framework error format
+                  if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                  } else if (typeof errorData === "object") {
+                    // Handle field-specific errors
+                    Object.entries(errorData).forEach(([field, messages]) => {
+                      if (Array.isArray(messages)) {
+                        const msg = messages.join(", ");
+                        // Map backend field names to form field names
+                        if (field === "title") {
+                          fieldErrs.title = msg;
+                        } else if (field === "description") {
+                          fieldErrs.description = msg;
+                        } else if (field === "category_id" || field === "category") {
+                          fieldErrs.category = msg;
+                        } else {
+                          // For other fields, add to general error
+                          if (!fieldErrs.general) fieldErrs.general = "";
+                          fieldErrs.general += `${field}: ${msg}; `;
+                        }
+                      } else if (typeof messages === "string") {
+                        if (field === "title") {
+                          fieldErrs.title = messages;
+                        } else if (field === "description") {
+                          fieldErrs.description = messages;
+                        } else if (field === "category_id" || field === "category") {
+                          fieldErrs.category = messages;
+                        } else {
+                          if (!fieldErrs.general) fieldErrs.general = "";
+                          fieldErrs.general += `${field}: ${messages}; `;
+                        }
+                      }
+                    });
+                    
+                    // Clean up general error trailing semicolon
+                    if (fieldErrs.general) {
+                      fieldErrs.general = fieldErrs.general.trim().replace(/; $/, "");
+                    }
+                    
+                    // If we have field-specific errors, set them and show general if exists
+                    if (fieldErrs.title || fieldErrs.description || fieldErrs.category) {
+                      setFormErrors(fieldErrs);
+                      return; // Don't throw, errors are displayed
+                    } else if (fieldErrs.general) {
+                      setFormErrors({ general: fieldErrs.general });
+                      return; // Don't throw, error is displayed
+                    } else {
+                      errorMessage = JSON.stringify(errorData);
+                    }
+                  } else if (typeof errorData === "string") {
+                    errorMessage = errorData;
+                  }
+                } catch {
+                  // If JSON parsing fails, try text
+                  try {
+                    const text = await res.text();
+                    if (text) errorMessage = text;
+                  } catch {
+                    // Keep default error message
+                  }
+                }
+                setFormErrors({ general: errorMessage });
+                return; // Don't throw, error is displayed
               }
-              // created
+              
+              // Success
               await res.json().catch(() => null);
               setOpenDialog(false);
               setForm({
@@ -551,6 +663,7 @@ export default function ComplaintAppealPage() {
                     : null,
                 reported_by: null,
               });
+              setFormErrors({});
               await loadCases();
 
               // success modal
@@ -558,45 +671,85 @@ export default function ComplaintAppealPage() {
               setSuccessOpen(true);
               setTimeout(() => setSuccessOpen(false), 3000);
             } catch (err: any) {
-              setError(err?.message || "Failed to create");
+              const errorMsg = err?.message || "Failed to create case";
+              setFormErrors({ general: errorMsg });
             } finally {
               setCreating(false);
             }
           }}
         >
-          <Input
-            placeholder="Title"
-            value={form.title}
-            onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))}
-          />
-          <TextAreaGroup
-            name="description"
-            label="Description"
-            rows={4}
-            placeholder="Describe the case"
-            value={form.description}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, description: e.target.value }))
-            }
-          />
+          {/* General Error Message */}
+          {formErrors.general && (
+            <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
+              {formErrors.general}
+            </div>
+          )}
 
-          <Select
-            value={form.category}
-            onValueChange={(val) => setForm((s) => ({ ...s, category: val }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Category" />
-            </SelectTrigger>
-            <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
-              <SelectItem value="land">Land</SelectItem>
-              <SelectItem value="education">Education</SelectItem>
-              <SelectItem value="infrastructure">Infrastructure</SelectItem>
-              <SelectItem value="healthcare">Healthcare</SelectItem>
-              <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
-              <SelectItem value="human right">Human Right</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <Input
+              placeholder="Enter case title"
+              value={form.title}
+              onChange={(e) => {
+                setForm((s) => ({ ...s, title: e.target.value }));
+                if (formErrors.title) setFormErrors((e) => ({ ...e, title: undefined }));
+              }}
+              className={formErrors.title ? "border-red-500" : ""}
+              required
+            />
+            {formErrors.title && (
+              <p className="mt-1 text-sm text-red-500">{formErrors.title}</p>
+            )}
+          </div>
+
+          <div>
+            <TextAreaGroup
+              name="description"
+              label="Description"
+              rows={4}
+              placeholder="Describe the case"
+              value={form.description}
+              onChange={(e) => {
+                setForm((s) => ({ ...s, description: e.target.value }));
+                if (formErrors.description) setFormErrors((e) => ({ ...e, description: undefined }));
+              }}
+              required
+            />
+            {formErrors.description && (
+              <p className="mt-1 text-sm text-red-500">{formErrors.description}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Category <span className="text-red-500">*</span>
+            </label>
+            <Select
+              value={form.category}
+              onValueChange={(val) => {
+                setForm((s) => ({ ...s, category: val }));
+                if (formErrors.category) setFormErrors((e) => ({ ...e, category: undefined }));
+              }}
+            >
+              <SelectTrigger className={formErrors.category ? "border-red-500" : ""}>
+                <SelectValue placeholder="Select Category" />
+              </SelectTrigger>
+              <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
+                <SelectItem value="land">Land</SelectItem>
+                <SelectItem value="education">Education</SelectItem>
+                <SelectItem value="infrastructure">Infrastructure</SelectItem>
+                <SelectItem value="healthcare">Healthcare</SelectItem>
+                <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
+                <SelectItem value="human right">Human Right</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {formErrors.category && (
+              <p className="mt-1 text-sm text-red-500">{formErrors.category}</p>
+            )}
+          </div>
 
           {/* Reported By Field */}
           <div>

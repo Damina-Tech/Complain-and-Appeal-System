@@ -80,13 +80,18 @@ def logout_view(request):
 def current_user(request):
     """Return the current authenticated user's information."""
     user = request.user
-    serializer = UserSerializer(user)
+    serializer = UserSerializer(user, context={'request': request})
     # Add full_name for frontend compatibility
     data = serializer.data
     full_name = f"{user.first_name} {user.last_name}".strip() or user.username
     data['full_name'] = full_name
     # Add user groups for role checking
     data['user_groups'] = [group.name for group in user.groups.all()]
+    # Add profile_image_url if available
+    if user.profile_image:
+        data['profile_image_url'] = request.build_absolute_uri(user.profile_image.url)
+    else:
+        data['profile_image_url'] = None
     return Response(data, status=status.HTTP_200_OK)
 
 

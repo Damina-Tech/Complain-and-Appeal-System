@@ -1,0 +1,82 @@
+name: Deploy Frontend to cPanel
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Create production env file
+        working-directory: ./frontend
+        run: |
+          cat > .env.production << EOF
+          NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+          EOF
+
+      - name: Build Next.js app
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Prepare deployment files
+        run: |
+          mkdir -p deploy-frontend
+          # Copy necessary files for Next.js standalone output
+          cp -r frontend/.next/standalone/* deploy-frontend/ 2>/dev/null || cp -r frontend/.next deploy-frontend/
+          cp -r frontend/public deploy-frontend/ 2>/dev/null || true
+          cp -r frontend/.next/static deploy-frontend/.next/static 2>/dev/null || true
+          # Copy package.json for production dependencies if needed
+          cp frontend/package.json deploy-frontend/ 2>/dev/null || true
+          cp frontend/next.config.mjs deploy-frontend/ 2>/dev/null || true
+          # Create .htaccess for Next.js routing
+          cat > deploy-frontend/.htaccess << 'EOF'
+          RewriteEngine On
+          RewriteBase /
+          RewriteRule ^index\.html$ - [L]
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /index.html [L]
+          EOF
+
+      - name: Deploy to cPanel via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./deploy-frontend
+          server-dir: ${{ secrets.FRONTEND_DEPLOY_PATH || 'public_html' }}
+          protocol: ftp
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/.next/cache/**
+            **/.env*
+            **/*.log
+            **/.DS_Store
+

@@ -95,3 +95,25 @@ export const submitCaseAppeal = async (
     throw error?.response?.data || error;
   }
 };
+
+export const changePassword = async (
+  oldPassword: string,
+  newPassword: string,
+  token: string,
+) => {
+  try {
+    const response = await axios.post(
+      `${API_URL}/password/change/`,
+      {
+        old_password: oldPassword,
+        new_password: newPassword,
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    return response.data;
+  } catch (error: any) {
+    throw error?.response?.data || error;
+  }
+};

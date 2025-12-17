@@ -102,7 +102,7 @@ export default function CaseViewPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
   // Data
   const [loading, setLoading] = useState(false);
@@ -333,14 +333,23 @@ export default function CaseViewPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingMembers(true);
-      const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
-      const filtered = (list || []).filter((u) => {
-        const groups = (u?.groups || [])
-          .map((g) => (typeof g === "string" ? g : g?.name))
-          .filter(Boolean) as string[];
-        return !groups.includes("Citizen");
-      });
-      setMembers(filtered);
+      // Use the new assignable-users endpoint which filters based on role
+      const res = await fetch(`${API_URL}/assignments/assignable-users/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const assignableUsers = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+        setMembers(assignableUsers);
+      } else {
+        // Fallback to old method if endpoint doesn't exist yet
+        const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
+        const filtered = (list || []).filter((u) => {
+          const groups = (u?.groups || [])
+            .map((g) => (typeof g === "string" ? g : g?.name))
+            .filter(Boolean) as string[];
+          return !groups.includes("Citizen");
+        });
+        setMembers(filtered);
+      }
     } catch {
       setMembers([]);
     } finally {

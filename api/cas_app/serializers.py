@@ -15,19 +15,31 @@ class UserSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+    profile_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
             "id", "username", "first_name", "last_name", 
-            "email", "phone_number", "national_id",
+            "email", "phone_number", "national_id", "address",
+            "profile_image", "profile_image_url",
             "last_seen", "status",
             "deleted_by", "added_by", "status_changed_by", 
             "created_at", "password", "groups"
         ]
         read_only_fields = [
             "last_seen", "deleted_by", "added_by", 
-            "status_changed_by", "created_at"
+            "status_changed_by", "created_at", "profile_image_url"
         ]
+
+    def get_profile_image_url(self, obj):
+        if obj.profile_image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_image.url)
+            return obj.profile_image.url
+        return None
 
     def create(self, validated_data):
         groups = validated_data.pop("groups", None)

@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BellIcon } from "./icons";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
-import { Check, CheckCheck } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Check, CheckCheck, RefreshCw } from "lucide-react";
 
 type Notification = {
   id: number | string;
@@ -24,129 +24,89 @@ type Notification = {
   related_case_title?: string | null;
 };
 
+// Constants
+const LAST_CHECK_KEY = "notification_last_check";
+const MIN_CHECK_INTERVAL = 2 * 60 * 1000; // 2 minutes minimum between checks
+
 export function Notification() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const isMobile = useIsMobile();
   const router = useRouter();
+  const pathname = usePathname();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // Refs to track state and prevent unnecessary calls
-  const lastNotificationTimestamp = useRef<string | null>(null);
-  const lastPollTime = useRef<number>(0);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isPollingRef = useRef(false);
-  const consecutiveErrorsRef = useRef(0);
-  const backoffDelayRef = useRef(60000); // Start with 60 seconds
+  // Track if we've loaded initial data
+  const hasLoadedInitial = useRef(false);
+  const lastCheckTime = useRef<number>(0);
 
-  const loadNotifications = useCallback(async (since?: string) => {
+  // Load notifications and unread count together
+  const loadNotifications = useCallback(async (force = false) => {
     if (!API_URL || !token) return;
+
+    // Check if enough time has passed since last check (unless forced)
+    const now = Date.now();
+    if (!force && now - lastCheckTime.current < MIN_CHECK_INTERVAL) {
+      return;
+    }
+    lastCheckTime.current = now;
+
     try {
       setLoading(true);
-      const url = since 
-        ? `${API_URL}/notifications/?limit=30&since=${encodeURIComponent(since)}`
-        : `${API_URL}/notifications/?limit=30`;
       
-      const res = await fetch(url, {
-        headers,
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`Failed to load notifications: ${res.status}`);
-      const data = await res.json();
-      const notifs = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
-      
-      if (since && notifs.length > 0) {
-        // Only append new notifications
-        setNotifications((prev) => {
-          const existingIds = new Set(prev.map((n: Notification) => n.id));
-          const newNotifs = notifs.filter((n: Notification) => !existingIds.has(n.id));
-          return [...newNotifs, ...prev].slice(0, 30); // Keep only latest 30
-        });
-      } else {
+      // Load both notifications and unread count in parallel
+      const [notifsRes, countRes] = await Promise.all([
+        fetch(`${API_URL}/notifications/?limit=30`, {
+          headers,
+          cache: "no-store",
+        }),
+        fetch(`${API_URL}/notifications/unread_count/`, {
+          headers,
+          cache: "default",
+        }),
+      ]);
+
+      if (notifsRes.ok) {
+        const data = await notifsRes.json();
+        const notifs = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
         setNotifications(notifs);
+        
+        // Use unread_count from API if available
+        if (data.unread_count !== undefined) {
+          setUnreadCount(data.unread_count);
+        } else {
+          setUnreadCount(notifs.filter((n: Notification) => !n.is_read).length);
+        }
       }
-      
-      // Update last notification timestamp
-      if (notifs.length > 0) {
-        lastNotificationTimestamp.current = notifs[0].created_at;
+
+      if (countRes.ok) {
+        const countData = await countRes.json();
+        setUnreadCount(countData.count || 0);
       }
-      
-      // Use unread_count from API if available, otherwise calculate
-      if (data.unread_count !== undefined) {
-        setUnreadCount(data.unread_count);
-      } else {
-        setUnreadCount(notifs.filter((n: Notification) => !n.is_read).length);
+
+      // Store last check time in localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem(LAST_CHECK_KEY, String(now));
       }
-      
-      // Reset error counter on success
-      consecutiveErrorsRef.current = 0;
-      backoffDelayRef.current = 60000; // Reset to 60 seconds
     } catch (error) {
       console.error("Failed to load notifications:", error);
-      consecutiveErrorsRef.current += 1;
-      // Exponential backoff: 60s, 120s, 240s, max 5min
-      backoffDelayRef.current = Math.min(
-        5 * 60 * 1000,
-        backoffDelayRef.current * 2
-      );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [API_URL, token, headers]);
 
-  const loadUnreadCount = useCallback(async () => {
-    if (!API_URL || !token) return;
-    
-    // Throttle: Don't poll if last poll was less than 10 seconds ago
-    const now = Date.now();
-    if (now - lastPollTime.current < 10000) {
-      return;
-    }
-    lastPollTime.current = now;
-
-    try {
-      // Use count_only parameter for lighter request
-      const res = await fetch(`${API_URL}/notifications/unread_count/`, {
-        headers,
-        // Allow browser cache for 10 seconds to reduce server load
-        cache: "default",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const newCount = data.count || 0;
-        
-        // Only update if count actually changed to prevent unnecessary re-renders
-        setUnreadCount((prev) => {
-          if (prev !== newCount) {
-            return newCount;
-          }
-          return prev;
-        });
-        
-        // If count increased, fetch new notifications
-        if (newCount > unreadCount && lastNotificationTimestamp.current) {
-          loadNotifications(lastNotificationTimestamp.current);
-        }
-        
-        // Reset error counter on success
-        consecutiveErrorsRef.current = 0;
-        backoffDelayRef.current = 60000; // Reset to 60 seconds
-      }
-    } catch (error) {
-      console.error("Failed to load unread count:", error);
-      consecutiveErrorsRef.current += 1;
-      // Exponential backoff
-      backoffDelayRef.current = Math.min(
-        5 * 60 * 1000,
-        backoffDelayRef.current * 2
-      );
-    }
-  }, [API_URL, token, headers, unreadCount, loadNotifications]);
+  // Manual refresh function
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadNotifications(true);
+  }, [loadNotifications]);
 
   const markAsRead = async (notificationId: number | string) => {
     if (!API_URL || !token) return;
@@ -194,127 +154,60 @@ export function Notification() {
     }
   };
 
-  // Smart polling with exponential backoff and visibility control
+  // Load on mount (only once)
   useEffect(() => {
-    let lastActivity = Date.now();
-    const INACTIVITY_THRESHOLD = 5 * 60 * 1000; // 5 minutes
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab is hidden - stop polling
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-          pollIntervalRef.current = null;
-          isPollingRef.current = false;
-        }
-      } else {
-        // Tab is visible - resume polling immediately
-        loadUnreadCount();
-        startPolling();
-      }
-    };
-
-    const handleActivity = () => {
-      lastActivity = Date.now();
-      // Reset backoff on user activity
-      if (backoffDelayRef.current > 60000) {
-        backoffDelayRef.current = 60000;
-      }
-    };
-
-    const startPolling = () => {
-      if (isPollingRef.current) return;
-      isPollingRef.current = true;
-
-      const poll = () => {
-        if (document.hidden) {
-          isPollingRef.current = false;
-          return;
-        }
-
-        const isInactive = Date.now() - lastActivity > INACTIVITY_THRESHOLD;
-        
-        // Use dynamic interval based on activity and error state
-        const baseInterval = isInactive ? 5 * 60 * 1000 : backoffDelayRef.current;
-        
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-        }
-        
-        pollIntervalRef.current = setInterval(() => {
-          if (document.hidden) {
-            isPollingRef.current = false;
-            return;
-          }
-          
-          const stillInactive = Date.now() - lastActivity > INACTIVITY_THRESHOLD;
-          if (!stillInactive) {
-            loadUnreadCount();
-          }
-        }, baseInterval);
-      };
-
-      poll();
-    };
-
-    // Initial load
-    loadNotifications();
-    loadUnreadCount();
-
-    // Start polling after initial load
-    const initialDelay = setTimeout(() => {
-      startPolling();
-    }, 5000); // Wait 5 seconds before first poll
-
-    // Listen for visibility changes
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    // Track user activity (throttled to reduce overhead)
-    let activityTimeout: NodeJS.Timeout | null = null;
-    const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart"];
-    const throttledActivity = () => {
-      if (activityTimeout) return;
-      handleActivity();
-      activityTimeout = setTimeout(() => {
-        activityTimeout = null;
-      }, 1000); // Throttle to once per second
-    };
-
-    activityEvents.forEach((event) => {
-      document.addEventListener(event, throttledActivity, { passive: true });
-    });
-
-    return () => {
-      clearTimeout(initialDelay);
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      activityEvents.forEach((event) => {
-        document.removeEventListener(event, throttledActivity);
-      });
-      if (activityTimeout) {
-        clearTimeout(activityTimeout);
-      }
-    };
-  }, [loadNotifications, loadUnreadCount]);
-
-  // Reload when dropdown opens (only if not already loaded recently)
-  useEffect(() => {
-    if (isOpen) {
-      // Only reload if notifications are empty or more than 2 minutes old
-      const shouldReload = notifications.length === 0 || 
-        (notifications.length > 0 && 
-         Date.now() - new Date(notifications[0].created_at).getTime() > 2 * 60 * 1000);
+    if (!hasLoadedInitial.current && API_URL && token) {
+      hasLoadedInitial.current = true;
       
-      if (shouldReload) {
+      // Get last check time from localStorage
+      if (typeof window !== "undefined") {
+        const lastCheck = localStorage.getItem(LAST_CHECK_KEY);
+        if (lastCheck) {
+          lastCheckTime.current = parseInt(lastCheck, 10);
+        }
+      }
+      
+      loadNotifications();
+    }
+  }, [API_URL, token, loadNotifications]);
+
+  // Load when dropdown opens (with throttling)
+  useEffect(() => {
+    if (isOpen && !loading) {
+      const now = Date.now();
+      // Only reload if it's been more than 30 seconds since last check
+      if (now - lastCheckTime.current > 30000) {
         loadNotifications();
-      } else {
-        // Just refresh unread count when opening
-        loadUnreadCount();
       }
     }
-  }, [isOpen, loadNotifications, loadUnreadCount, notifications]);
+  }, [isOpen, loadNotifications, loading]);
+
+  // Load when window regains focus (user returns to tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (!document.hidden && API_URL && token) {
+        const now = Date.now();
+        // Only check if it's been more than 1 minute since last check
+        if (now - lastCheckTime.current > 60000) {
+          loadNotifications();
+        }
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [API_URL, token, loadNotifications]);
+
+  // Load when route changes (user navigates)
+  useEffect(() => {
+    if (pathname && hasLoadedInitial.current) {
+      const now = Date.now();
+      // Only check if it's been more than 1 minute since last check
+      if (now - lastCheckTime.current > 60000) {
+        loadNotifications();
+      }
+    }
+  }, [pathname, loadNotifications]);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -383,6 +276,16 @@ export function Notification() {
             Notifications
           </span>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="h-6 w-6 p-0"
+              title="Refresh notifications"
+            >
+              <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+            </Button>
             {unreadCount > 0 && (
               <span className="rounded-md bg-primary px-[9px] py-0.5 text-xs font-medium text-white">
                 {unreadCount} new

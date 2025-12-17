@@ -40,8 +40,14 @@ class IsDirectorOrAdmin(permissions.BasePermission):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("-id")
     serializer_class = UserSerializer
-    # default; we’ll override per-action in get_permissions()
+    # default; we'll override per-action in get_permissions()
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+        """Add request to serializer context for absolute URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     def get_permissions(self):
         if self.action in ["create"]:               # self-registration
@@ -596,10 +602,67 @@ class AssignmentViewSet(viewsets.ModelViewSet):
     """
     Records a handover between users for a case.
     If from_user_id not supplied, default to request.user for convenience.
+    
+    Assignment rules:
+    - Director/Mayor Office: Can assign to any office or users in any office (except Citizen)
+    - Focal Person: Can only assign to users within their own office (except Citizen)
     """
     queryset = Assignment.objects.select_related("case_id", "from_user_id", "to_user_id")
     serializer_class = AssignmentSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        """Validate assignment permissions before creating."""
+        to_user_id = request.data.get("to_user_id")
+        if not to_user_id:
+            return Response(
+                {"detail": "to_user_id is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            to_user = User.objects.get(pk=to_user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Target user not found."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if target user is Citizen (not allowed)
+        if is_citizen(to_user):
+            return Response(
+                {"detail": "Cannot assign cases to Citizen role users."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get current user's role groups
+        current_user_groups = [g.name for g in request.user.groups.all()]
+        is_director = "Director" in current_user_groups
+        is_mayor_office = "Mayor Office" in current_user_groups
+        is_focal_person = "Focal Person" in current_user_groups
+        
+        # Director and Mayor Office can assign to any office/users
+        if is_director or is_mayor_office:
+            # Allowed - proceed
+            pass
+        elif is_focal_person:
+            # Focal Person can only assign to users in their own office
+            if not request.user.office:
+                return Response(
+                    {"detail": "You must be assigned to an office to assign cases."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if to_user.office_id != request.user.office_id:
+                return Response(
+                    {"detail": "Focal Person can only assign cases to users within their own office."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            # Other roles (Admin, etc.) - allow for now, or add specific rules
+            pass
+        
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         from_user = serializer.validated_data.get("from_user_id")
@@ -631,6 +694,46 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(ser.data)
         ser = self.get_serializer(qs, many=True)
         return Response(ser.data)
+
+    @action(detail=False, methods=["get"], url_path="assignable-users")
+    def assignable_users(self, request):
+        """
+        Get list of users that the current user can assign cases to.
+        - Director/Mayor Office: All users in any office (except Citizen)
+        - Focal Person: Only users in their own office (except Citizen)
+        """
+        # Get current user's role groups
+        current_user_groups = [g.name for g in request.user.groups.all()]
+        is_director = "Director" in current_user_groups
+        is_mayor_office = "Mayor Office" in current_user_groups
+        is_focal_person = "Focal Person" in current_user_groups
+        
+        # Base queryset: exclude Citizen role users
+        citizen_group = Group.objects.filter(name="Citizen").first()
+        if citizen_group:
+            qs = User.objects.exclude(groups=citizen_group).filter(is_active=True, is_deleted=False)
+        else:
+            qs = User.objects.filter(is_active=True, is_deleted=False)
+        
+        # Filter based on role
+        if is_director or is_mayor_office:
+            # Can assign to any office/users
+            pass  # No additional filtering
+        elif is_focal_person:
+            # Can only assign to users in their own office
+            if request.user.office:
+                qs = qs.filter(office=request.user.office)
+            else:
+                # If focal person has no office, they can't assign to anyone
+                qs = User.objects.none()
+        else:
+            # Other roles - default to empty or add specific rules
+            qs = User.objects.none()
+        
+        # Serialize and return
+        from .serializers import UserSerializer
+        serializer = UserSerializer(qs.select_related("office"), many=True)
+        return Response(serializer.data)
     
 
 class RoleHierarchyViewSet(viewsets.ModelViewSet):

@@ -30,6 +30,12 @@ export default function EditCasePage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    title?: string;
+    description?: string;
+    category?: string;
+    general?: string;
+  }>({});
   const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
 
   // Attachments state
@@ -131,23 +137,47 @@ export default function EditCasePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Clear previous errors
+    setFieldErrors({});
+    setError("");
+    
+    // Validation
+    const errors: { title?: string; description?: string; category?: string } = {};
+    if (!caseData.title || caseData.title.trim() === "") {
+      errors.title = "Title is required";
+    }
+    if (!caseData.description || caseData.description.trim() === "") {
+      errors.description = "Description is required";
+    }
+    if (!caseData.category || caseData.category.trim() === "") {
+      errors.category = "Category is required";
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    
     if (!API_URL) {
-      setError("NEXT_PUBLIC_API_URL is not set");
+      setFieldErrors({ general: "NEXT_PUBLIC_API_URL is not set" });
       return;
     }
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
-      setError("You are not authenticated. Please sign in.");
+      setFieldErrors({ general: "You are not authenticated. Please sign in." });
       return;
     }
+    
     try {
       setSaving(true);
+      setFieldErrors({});
       setError("");
 
       // 1) Save the text fields
       const payload: any = {
-        title: caseData.title,
-        description: caseData.description,
+        title: caseData.title.trim(),
+        description: caseData.description.trim(),
         category_id: caseData.category,
         status: caseData.status,
         priority: caseData.priority,
@@ -161,9 +191,57 @@ export default function EditCasePage() {
         },
         body: JSON.stringify(payload),
       });
+      
       if (!baseRes.ok) {
-        const msg = await baseRes.text();
-        throw new Error(msg || `Update failed: ${baseRes.status}`);
+        let errorMessage = `Failed to update case (${baseRes.status})`;
+        try {
+          const errorData = await baseRes.json();
+          // Handle Django REST Framework error format
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (typeof errorData === "object") {
+            // Handle field-specific errors
+            const fieldErrs: { [key: string]: string } = {};
+            const generalErrs: string[] = [];
+            
+            Object.entries(errorData).forEach(([field, messages]) => {
+              if (Array.isArray(messages)) {
+                const msg = messages.join(", ");
+                if (field === "title" || field === "description" || field === "category_id") {
+                  fieldErrs[field === "category_id" ? "category" : field] = msg;
+                } else {
+                  generalErrs.push(`${field}: ${msg}`);
+                }
+              } else if (typeof messages === "string") {
+                if (field === "title" || field === "description" || field === "category_id") {
+                  fieldErrs[field === "category_id" ? "category" : field] = messages;
+                } else {
+                  generalErrs.push(`${field}: ${messages}`);
+                }
+              }
+            });
+            
+            if (Object.keys(fieldErrs).length > 0) {
+              setFieldErrors(fieldErrs);
+            }
+            if (generalErrs.length > 0) {
+              errorMessage = generalErrs.join("; ");
+            } else if (Object.keys(fieldErrs).length === 0) {
+              errorMessage = JSON.stringify(errorData);
+            }
+          } else if (typeof errorData === "string") {
+            errorMessage = errorData;
+          }
+        } catch {
+          // If JSON parsing fails, try text
+          try {
+            const text = await baseRes.text();
+            if (text) errorMessage = text;
+          } catch {
+            // Keep default error message
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const hasAttachmentChanges =
@@ -209,14 +287,48 @@ export default function EditCasePage() {
 
         // If your API is strict with PATCH+multipart, you may need PUT or POST to /attachments/.
         if (!attRes.ok) {
-          const m = await attRes.text();
-          throw new Error(m || `Attachment update failed: ${attRes.status}`);
+          let errorMessage = `Attachment update failed (${attRes.status})`;
+          try {
+            const errorData = await attRes.json();
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            } else if (typeof errorData === "object") {
+              const fieldErrors: string[] = [];
+              Object.entries(errorData).forEach(([field, messages]) => {
+                if (Array.isArray(messages)) {
+                  fieldErrors.push(`${field}: ${messages.join(", ")}`);
+                } else if (typeof messages === "string") {
+                  fieldErrors.push(`${field}: ${messages}`);
+                }
+              });
+              if (fieldErrors.length > 0) {
+                errorMessage = fieldErrors.join("; ");
+              } else {
+                errorMessage = JSON.stringify(errorData);
+              }
+            } else if (typeof errorData === "string") {
+              errorMessage = errorData;
+            }
+          } catch {
+            try {
+              const text = await attRes.text();
+              if (text) errorMessage = text;
+            } catch {
+              // Keep default error message
+            }
+          }
+          throw new Error(errorMessage);
         }
       }
 
       router.push("/cases");
     } catch (err: any) {
-      setError(err?.message || "Failed to save changes");
+      const errorMsg = err?.message || "Failed to save changes";
+      if (!fieldErrors.title && !fieldErrors.description && !fieldErrors.category) {
+        setFieldErrors({ general: errorMsg });
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setSaving(false);
     }
@@ -225,28 +337,81 @@ export default function EditCasePage() {
   return (
     <ShowcaseSection title={`Edit Case #${id}`} className="!p-6.5">
       {loading && <div className="mb-4 text-gray-500">Loading...</div>}
-      {!!error && !loading && <div className="mb-4 text-red-500">{error}</div>}
+      
+      {/* General Error Message */}
+      {(fieldErrors.general || error) && !loading && (
+        <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
+          {fieldErrors.general || error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
-        <InputGroup
-          label="Title"
-          type="text"
-          name="title"
-          value={caseData.title}
-          onChange={handleChange}
-          placeholder="Enter case title"
-          className="mb-4.5"
-        />
+        <div className="mb-4.5">
+          <InputGroup
+            label="Title *"
+            type="text"
+            name="title"
+            value={caseData.title}
+            onChange={(e) => {
+              handleChange(e);
+              if (fieldErrors.title) setFieldErrors((e) => ({ ...e, title: undefined }));
+            }}
+            placeholder="Enter case title"
+            required
+          />
+          {fieldErrors.title && (
+            <p className="mt-1 text-sm text-red-500">{fieldErrors.title}</p>
+          )}
+        </div>
 
-        <TextAreaGroup
-          label="Description"
-          name="description"
-          value={caseData.description}
-          onChange={(e) => setCaseData((s) => ({ ...s, description: e.target.value }))}
-          placeholder="Enter description"
-          rows={6}
-          className="mb-4.5"
-        />
+        <div className="mb-4.5">
+          <TextAreaGroup
+            label="Description *"
+            name="description"
+            value={caseData.description}
+            onChange={(e) => {
+              setCaseData((s) => ({ ...s, description: e.target.value }));
+              if (fieldErrors.description) setFieldErrors((e) => ({ ...e, description: undefined }));
+            }}
+            placeholder="Enter description"
+            rows={6}
+            required
+          />
+          {fieldErrors.description && (
+            <p className="mt-1 text-sm text-red-500">{fieldErrors.description}</p>
+          )}
+        </div>
+
+        <div className="mb-4.5">
+          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            Category <span className="text-red-500">*</span>
+          </label>
+          <select
+            name="category"
+            value={caseData.category}
+            onChange={(e) => {
+              setCaseData((s) => ({ ...s, category: e.target.value }));
+              if (fieldErrors.category) setFieldErrors((e) => ({ ...e, category: undefined }));
+            }}
+            className={`w-full rounded-lg border px-5.5 py-3 text-dark outline-none transition focus:border-primary dark:border-dark-3 dark:bg-dark-2 dark:text-white dark:focus:border-primary ${
+              fieldErrors.category ? "border-red-500" : "border-stroke"
+            }`}
+            required
+          >
+            <option value="">Select Category</option>
+            <option value="land">Land</option>
+            <option value="education">Education</option>
+            <option value="infrastructure">Infrastructure</option>
+            <option value="healthcare">Healthcare</option>
+            <option value="water & sanitation">Water & Sanitation</option>
+            <option value="human right">Human Right</option>
+            <option value="other">Other</option>
+          </select>
+          {fieldErrors.category && (
+            <p className="mt-1 text-sm text-red-500">{fieldErrors.category}</p>
+          )}
+        </div>
+
 
         {/* Attachments */}
         <div className="mb-6">

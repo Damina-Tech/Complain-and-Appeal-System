@@ -29,7 +29,16 @@ export function UserInfo() {
 
   const displayName = user?.name || (loading ? "..." : FALLBACK.name);
   const displayEmail = user?.email || (loading ? "..." : FALLBACK.email);
-  const displayImg = user?.img || FALLBACK.img;
+  
+  // Generate avatar URL if no profile image
+  const getAvatarUrl = (img: string | undefined) => {
+    if (img) return img;
+    // Generate avatar with initials
+    const name = displayName || "User";
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=200&bold=true`;
+  };
+  
+  const displayImg = user?.img ? user.img : getAvatarUrl(undefined);
 
   return (
     <Dropdown isOpen={isOpen} setIsOpen={setIsOpen}>
@@ -39,11 +48,12 @@ export function UserInfo() {
         <figure className="flex items-center gap-3">
           <Image
             src={displayImg}
-            className="size-12"
+            className="size-12 rounded-full object-cover"
             alt={`Avatar of ${displayName}`}
             role="presentation"
-            width={200}
-            height={200}
+            width={48}
+            height={48}
+            unoptimized={displayImg.startsWith("https://ui-avatars.com")}
           />
           <figcaption className="flex items-center gap-1 font-medium text-dark dark:text-dark-6 max-[1024px]:sr-only">
             <span>{displayName}</span>
@@ -68,11 +78,12 @@ export function UserInfo() {
         <figure className="flex items-center gap-2.5 px-5 py-3.5">
           <Image
             src={displayImg}
-            className="size-12"
+            className="size-12 rounded-full object-cover"
             alt={`Avatar for ${displayName}`}
             role="presentation"
-            width={200}
-            height={200}
+            width={48}
+            height={48}
+            unoptimized={displayImg.startsWith("https://ui-avatars.com")}
           />
           <figcaption className="space-y-1 text-base font-medium">
             <div className="mb-2 leading-none text-dark dark:text-white">

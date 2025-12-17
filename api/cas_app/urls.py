@@ -22,5 +22,6 @@ urlpatterns = [
     path('logout/', logout_view, name='logout_view'),
     path('password/forgot/', forget_password, name='forget_password'),
     path('password/reset/', reset_password, name='reset_password'),
+    path('password/change/', change_password, name='change_password'),
     path('auth/me/', current_user, name='current_user'),
 ]
