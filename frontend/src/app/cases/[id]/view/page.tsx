@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Download, FileText } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
@@ -73,12 +73,12 @@ const uiToApiStatus: Record<string, string> = {
 
 const fetchAllPaginated = async <T,>(
   url: string,
-  headers: Record<string, string>,
+  headers: HeadersInit,
 ): Promise<T[]> => {
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -102,7 +102,7 @@ export default function CaseViewPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Data
   const [loading, setLoading] = useState(false);
@@ -234,7 +234,7 @@ export default function CaseViewPage() {
     if (hasStaffRole) {
       loadUserHierarchy();
     }
-  }, [API_URL, token, hasStaffRole]);
+  }, [API_URL, token, hasStaffRole, headers]);
   
   // Dynamic permission checking
   const canManageCase = hasStaffRole; // Any non-citizen role can manage
@@ -358,7 +358,7 @@ export default function CaseViewPage() {
   };
 
 
-  const loadLatestAssignment = async () => {
+  const loadLatestAssignment = useCallback(async () => {
     if (!API_URL || !token || !id) return;
     try {
       setLoadingAssignment(true);
@@ -407,9 +407,9 @@ export default function CaseViewPage() {
     } finally {
       setLoadingAssignment(false);
     }
-  };
+  }, [API_URL, token, id, headers, members]);
 
-  const loadLatestTransfer = async () => {
+  const loadLatestTransfer = useCallback(async () => {
     if (!API_URL || !token || !id) return;
     try {
       setLoadingTransfer(true);
@@ -457,7 +457,7 @@ export default function CaseViewPage() {
     } finally {
       setLoadingTransfer(false);
     }
-  };
+  }, [API_URL, token, id, headers, offices]);
 
   useEffect(() => {
     loadCase();
@@ -513,7 +513,7 @@ export default function CaseViewPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [caseData, id, members.length, offices.length]);
+  }, [caseData, id, members.length, offices.length, loadLatestAssignment, loadLatestTransfer]);
 
   /* -------- options -------- */
   // Use transfer targets if available (hierarchy-based), otherwise fallback to all offices

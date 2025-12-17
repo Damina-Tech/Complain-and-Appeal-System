@@ -51,11 +51,11 @@ type EditForm = {
 
 const allowedToManage = new Set(["Director", "President Office", "President"]);
 
-const fetchAllPaginated = async <T,>(url: string, headers: Record<string, string>): Promise<T[]> => {
+const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise<T[]> => {
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -97,7 +97,7 @@ export default function AnnouncementsPage() {
   const role  = typeof window !== "undefined" ? localStorage.getItem("role")  : null;
 
   const canManage = !!role && allowedToManage.has(role);
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Data
   const [rows, setRows] = useState<Announcement[]>([]);

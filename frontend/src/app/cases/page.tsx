@@ -1004,7 +1004,7 @@ export default function ComplaintAppealPage() {
       >
         <div className="space-y-4">
           <p className="text-gray-700 dark:text-gray-300">
-            Are you sure you want to delete case "{caseToDelete?.title}"? This action cannot be undone.
+            Are you sure you want to delete case &quot;{caseToDelete?.title}&quot;? This action cannot be undone.
           </p>
           <div className="flex justify-end gap-2">
             <Button

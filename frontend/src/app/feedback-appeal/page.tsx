@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
   Table,
@@ -66,7 +66,7 @@ export default function FeedbackAppealPage() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -81,7 +81,7 @@ export default function FeedbackAppealPage() {
     let next: string | null = url;
     const all: T[] = [];
     while (next) {
-      const res = await fetch(next, { headers, cache: "no-store" });
+      const res: Response = await fetch(next, { headers, cache: "no-store" });
       if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -98,7 +98,7 @@ export default function FeedbackAppealPage() {
     return all;
   };
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     if (!API_URL || !token) {
       setError("Missing API URL or authentication");
       return;
@@ -122,11 +122,11 @@ export default function FeedbackAppealPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, token, filterType, headers]);
 
   useEffect(() => {
     loadAll();
-  }, [filterType]);
+  }, [loadAll]);
 
   // Pagination calculations
   const totalPages = Math.ceil(rows.length / itemsPerPage);

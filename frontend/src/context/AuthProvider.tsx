@@ -14,11 +14,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         checkLoginIframe: false, 
         pkceMethod: "S256", // better security
       })
-      .then(authenticated => {
+      .then((authenticated: boolean) => {
         setIsAuthenticated(authenticated);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err: unknown) => {
         console.error("Keycloak init failed:", err);
         setLoading(false);
       });

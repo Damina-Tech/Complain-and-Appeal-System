@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { type HTMLInputTypeAttribute, useId } from "react";
 
-type InputGroupProps = {
+export type InputGroupProps = {
   className?: string;
   label: string;
   placeholder: string;
@@ -11,6 +11,7 @@ type InputGroupProps = {
   disabled?: boolean;
   active?: boolean;
   handleChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   value?: string;
   name?: string;
   icon?: React.ReactNode;
@@ -20,7 +21,7 @@ type InputGroupProps = {
   defaultValue?: string;
 };
 
-const InputGroup: React.FC<InputGroupProps> = ({
+function InputGroup({
   className,
   label,
   type,
@@ -29,10 +30,11 @@ const InputGroup: React.FC<InputGroupProps> = ({
   disabled,
   active,
   handleChange,
+  onChange,
   icon,
   iconPosition = "left",
   ...props
-}) => {
+}: InputGroupProps) {
   const id = useId();
 
   return (
@@ -55,7 +57,7 @@ const InputGroup: React.FC<InputGroupProps> = ({
           type={type}
           name={props.name}
           placeholder={placeholder}
-          onChange={handleChange}
+          onChange={onChange || handleChange}
           value={props.value}
           defaultValue={props.defaultValue}
           className={cn(
@@ -91,7 +93,7 @@ const InputGroup: React.FC<InputGroupProps> = ({
       </div>
     </div>
   );
-};
+}
 
 export default InputGroup;
 

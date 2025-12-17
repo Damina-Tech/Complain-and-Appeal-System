@@ -4,7 +4,7 @@ import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { NAV_DATA } from "./data";
 import { defaultRouteForRole, slugFromRole } from "@/lib/role";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
@@ -16,14 +16,14 @@ export function Sidebar() {
   const { setIsOpen, isOpen, isMobile, toggleSidebar } = useSidebarContext();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
-  const toggleExpanded = (title: string) => {
+  const toggleExpanded = useCallback((title: string) => {
     setExpandedItems((prev) => (prev.includes(title) ? [] : [title]));
 
     // Uncomment the following line to enable multiple expanded items
     // setExpandedItems((prev) =>
     //   prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title],
     // );
-  };
+  }, []);
 
   useEffect(() => {
     // Keep collapsible open, when it's subpage is active
@@ -41,7 +41,7 @@ export function Sidebar() {
         });
       });
     });
-  }, [pathname]);
+  }, [pathname, expandedItems, toggleExpanded]);
 
   // Get user groups from localStorage (dynamic role checking)
   const [userGroups, setUserGroups] = useState<string[]>([]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { ShowcaseSection } from "@/components/Layouts/showcase-section";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SuccessModal } from "@/components/ui/success-modal";
@@ -23,7 +23,7 @@ export function PasswordChangeForm() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

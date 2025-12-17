@@ -49,11 +49,11 @@ const allowedRoles = new Set(["Director", "President Office", "President"]);
 
 /* ===================== Utilities ===================== */
 
-const fetchAllPaginated = async <T,>(url: string, headers: Record<string, string>): Promise<T[]> => {
+const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise<T[]> => {
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -198,7 +198,7 @@ export default function ReportsPage() {
   const role =
     typeof window !== "undefined" ? localStorage.getItem("role") : null;
 
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Guard
   useEffect(() => {
@@ -289,11 +289,11 @@ export default function ReportsPage() {
       });
 
       const [s, bs, bo, bc, ta] = await Promise.all([
-        fetch(`${API_URL}/reports/summary/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<SummaryResp>,
-        fetch(`${API_URL}/reports/cases_by_status/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<StatusRow[]>,
-        fetch(`${API_URL}/reports/cases_by_office/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<OfficeRow[]>,
-        fetch(`${API_URL}/reports/cases_by_category/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<CategoryRow[]>,
-        fetch(`${API_URL}/reports/top_assignees/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then(r => r.json()) as Promise<AssigneeRow[]>,
+        fetch(`${API_URL}/reports/summary/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<SummaryResp>,
+        fetch(`${API_URL}/reports/cases_by_status/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<StatusRow[]>,
+        fetch(`${API_URL}/reports/cases_by_office/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<OfficeRow[]>,
+        fetch(`${API_URL}/reports/cases_by_category/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<CategoryRow[]>,
+        fetch(`${API_URL}/reports/top_assignees/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<AssigneeRow[]>,
       ]);
 
       setSummary(s);

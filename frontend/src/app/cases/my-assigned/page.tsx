@@ -60,12 +60,12 @@ const caseIdOf = (r: AssignmentRecord) =>
 
 const fetchAllPaginated = async <T,>(
   url: string,
-  headers: Record<string, string>,
+  headers: HeadersInit,
 ): Promise<T[]> => {
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -126,7 +126,7 @@ export default function MyAssignedCasesPage() {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") || "" : "";
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Data + UX
   const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);

@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { BellIcon } from "./icons";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
@@ -40,7 +40,7 @@ export function Notification() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Track if we've loaded initial data
   const hasLoadedInitial = useRef(false);

@@ -2,7 +2,7 @@
 
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { CameraIcon } from "./_components/icons";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ export default function ProfilePage() {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=200&bold=true`;
   };
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     // Prevent multiple loads
     if (hasLoadedRef.current || !API_URL || !token) return;
     
@@ -85,11 +85,11 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, token]);
 
   useEffect(() => {
     loadUserData();
-  }, [API_URL, token]);
+  }, [loadUserData]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

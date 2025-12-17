@@ -71,7 +71,7 @@ export default function ResetPasswordPage() {
           placeholder="Enter new password"
           name="password"
           value={form.password}
-          handleChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
+          onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
           required
           icon={<PasswordIcon />}
           iconPosition="left"
@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
           placeholder="Re-enter new password"
           name="confirm"
           value={form.confirm}
-          handleChange={(e) => setForm((s) => ({ ...s, confirm: e.target.value }))}
+          onChange={(e) => setForm((s) => ({ ...s, confirm: e.target.value }))}
           required
           icon={<PasswordIcon />}
           iconPosition="left"

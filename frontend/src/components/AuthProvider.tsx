@@ -24,14 +24,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     keycloak
       .init({ onLoad: "login-required", checkLoginIframe: false })
-      .then((auth) => {
+      .then((auth: boolean) => {
         if (auth) {
           setAuthenticated(true);
           setToken(keycloak.token || null);
 
           // refresh token every 50s
           setInterval(() => {
-            keycloak.updateToken(70).then((refreshed) => {
+            keycloak.updateToken(70).then((refreshed: boolean) => {
               if (refreshed) setToken(keycloak.token || null);
             });
           }, 50000);

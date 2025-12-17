@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -80,11 +80,11 @@ const caseTitleOf = (r: TransferRecord | AssignmentRecord) => {
   return typeof c === "object" && c?.title ? c.title : `Case #${caseIdOf(r)}`;
 };
 
-const fetchAllPaginated = async <T,>(url: string, headers: Record<string, string>): Promise<T[]> => {
+const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise<T[]> => {
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -106,7 +106,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: Record<string, string
 export default function CaseActivityPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Current user context
   const currentUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") || "" : "";
@@ -253,15 +253,17 @@ export default function CaseActivityPage() {
     setSelectedRow(row);
     // Prefill the last chosen destination + reason:
     if (kind === "transfer") {
+      const transferRow = row as TransferRecord;
       const currentTo =
-        row.to_office_id ??
-        (typeof (row as TransferRecord).to_office === "object" ? (row as TransferRecord).to_office?.id : (row as TransferRecord).to_office) ??
+        transferRow.to_office_id ??
+        (typeof transferRow.to_office === "object" ? transferRow.to_office?.id : transferRow.to_office) ??
         "";
       setSelectedOfficeId(currentTo ? String(currentTo) : "");
     } else {
+      const assignRow = row as AssignmentRecord;
       const currentTo =
-        (row as AssignmentRecord).to_user_id ??
-        (typeof (row as AssignmentRecord).to_user === "object" ? (row as AssignmentRecord).to_user?.id : (row as AssignmentRecord).to_user) ??
+        assignRow.to_user_id ??
+        (typeof assignRow.to_user === "object" ? assignRow.to_user?.id : assignRow.to_user) ??
         "";
       setSelectedMemberId(currentTo ? String(currentTo) : "");
     }
