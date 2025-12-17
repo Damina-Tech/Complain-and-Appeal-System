@@ -76,6 +76,16 @@ jobs:
           RewriteRule . /index.html [L]
           EOF
 
+      - name: Set frontend server directory path
+        id: set-frontend-server-dir
+        run: |
+          DEPLOY_PATH="${{ secrets.FRONTEND_DEPLOY_PATH || 'komi.ciroocity.com' }}"
+          # Ensure path ends with /
+          if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
+            DEPLOY_PATH="${DEPLOY_PATH}/"
+          fi
+          echo "server-dir=${DEPLOY_PATH}" >> $GITHUB_OUTPUT
+
       - name: Deploy Frontend to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -83,7 +93,7 @@ jobs:
           username: ${{ secrets.FRONTEND_FTP_USERNAME }}
           password: ${{ secrets.FRONTEND_FTP_PASSWORD }}
           local-dir: ./deploy-frontend/
-          server-dir: ${{ secrets.FRONTEND_DEPLOY_PATH || 'komi.ciroocity.com/' }}
+          server-dir: ${{ steps.set-frontend-server-dir.outputs.server-dir }}
           protocol: ftp
           dangerous-clean-slate: false
           exclude: |
@@ -158,6 +168,16 @@ jobs:
           application = get_wsgi_application()
           EOF
 
+      - name: Set API server directory path
+        id: set-api-server-dir
+        run: |
+          DEPLOY_PATH="${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com' }}"
+          # Ensure path ends with /
+          if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
+            DEPLOY_PATH="${DEPLOY_PATH}/"
+          fi
+          echo "server-dir=${DEPLOY_PATH}" >> $GITHUB_OUTPUT
+
       - name: Deploy API to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -165,7 +185,7 @@ jobs:
           username: ${{ secrets.API_FTP_USERNAME }}
           password: ${{ secrets.API_FTP_PASSWORD }}
           local-dir: ./deploy-api/
-          server-dir: ${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com/' }}
+          server-dir: ${{ steps.set-api-server-dir.outputs.server-dir }}
           protocol: ftp
           dangerous-clean-slate: false
           exclude: |
