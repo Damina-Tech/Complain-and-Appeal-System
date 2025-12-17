@@ -9,6 +9,7 @@ on:
       - 'README.md'
       - '**.md'
       - '.gitignore'
+  workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
   deploy-frontend:
