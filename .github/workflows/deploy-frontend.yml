@@ -68,7 +68,7 @@ jobs:
           server: ${{ secrets.FRONTEND_FTP_SERVER || secrets.FTP_SERVER }}
           username: ${{ secrets.FRONTEND_FTP_USERNAME }}
           password: ${{ secrets.FRONTEND_FTP_PASSWORD }}
-          local-dir: ./deploy-frontend
+          local-dir: ./deploy-frontend/
           server-dir: ${{ secrets.FRONTEND_DEPLOY_PATH || 'komi.ciroocity.com' }}
           protocol: ftp
           dangerous-clean-slate: false
