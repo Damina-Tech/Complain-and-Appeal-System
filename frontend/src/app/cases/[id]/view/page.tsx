@@ -5,10 +5,13 @@ import {
   Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
+import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
+import { cn } from "@/lib/utils";
+import { submitCaseFeedback, submitCaseAppeal } from "@/utils/api";
 
 /* ---------------- Types ---------------- */
 type ApiCase = {
@@ -99,7 +102,7 @@ export default function CaseViewPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
   // Data
   const [loading, setLoading] = useState(false);
@@ -112,8 +115,23 @@ export default function CaseViewPage() {
   const [loadingOffices, setLoadingOffices] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
+  // Assignment and Transfer info
+  const [latestAssignment, setLatestAssignment] = useState<{
+    to_user_id?: number | string;
+    to_user_name?: string;
+    due_date?: string;
+    timestamp?: string;
+  } | null>(null);
+  const [latestTransfer, setLatestTransfer] = useState<{
+    to_office_id?: number | string;
+    to_office_name?: string;
+    timestamp?: string;
+  } | null>(null);
+  const [loadingAssignment, setLoadingAssignment] = useState(false);
+  const [loadingTransfer, setLoadingTransfer] = useState(false);
+
   // Modals
-  const [modalOpen, setModalOpen] = useState<"transfer" | "assign" | "status" | null>(null);
+  const [modalOpen, setModalOpen] = useState<"transfer" | "assign" | "status" | "appeal" | "feedback" | null>(null);
 
   // Transfer form
   const [selectedOfficeId, setSelectedOfficeId] = useState<string>("");
@@ -127,20 +145,101 @@ export default function CaseViewPage() {
   // Status form
   const [selectedStatusUI, setSelectedStatusUI] = useState<string>("Pending");
 
+  // Appeal form
+  const [appealReason, setAppealReason] = useState<string>("");
+  const [appealOfficeId, setAppealOfficeId] = useState<string>("");
+  const [submittingAppeal, setSubmittingAppeal] = useState(false);
+
+  // Feedback form
+  const [feedbackRating, setFeedbackRating] = useState<number>(5);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
   // Success
   const [successOpen, setSuccessOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Role gate
-  const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
-  const actionRoles = [
-    "Focal Person - Kebele",
-    "Focal Person - Wereda",
-    "Focal Person - Sector",
-    "Director",
-    "President Office",
-    "President",
-  ];
+  // Role gate - check user groups from localStorage or fetch from API
+  const [currentUserGroups, setCurrentUserGroups] = useState<string[]>([]);
+  
+  useEffect(() => {
+    const loadUserGroups = async () => {
+      if (!API_URL || !token) return;
+      
+      // First try localStorage
+      try {
+        const raw = localStorage.getItem("user_groups");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const groups = parsed.map((g) => (typeof g === "string" ? g : g?.name)).filter(Boolean);
+            setCurrentUserGroups(groups);
+            return;
+          }
+        }
+      } catch {
+        // Continue to fetch from API
+      }
+      
+      // Fetch from API if not in localStorage
+      try {
+        const res = await fetch(`${API_URL}/auth/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const groups = (data.user_groups || []).map((g: string) => g).filter(Boolean);
+          setCurrentUserGroups(groups);
+          // Store in localStorage for future use
+          localStorage.setItem("user_groups", JSON.stringify(groups));
+        }
+      } catch (e) {
+        console.error("Failed to load user groups:", e);
+      }
+    };
+    
+    loadUserGroups();
+  }, [API_URL, token]);
+  
+  // Fallback: also check role from localStorage if user_groups not loaded
+  const roleFromStorage = typeof window !== "undefined" ? localStorage.getItem("role") : null;
+  
+  // Dynamic role checking - check if user has any non-citizen role
+  const isCitizen = currentUserGroups.includes("Citizen") || roleFromStorage === "Citizen";
+  const hasStaffRole = currentUserGroups.some(
+    (role) => role !== "Citizen"
+  ) || (roleFromStorage && roleFromStorage !== "Citizen");
+  
+  // Check permissions dynamically via API
+  const [userHierarchy, setUserHierarchy] = useState<{
+    can_assign?: boolean;
+    can_change_status?: boolean;
+    hierarchy_level?: number;
+  } | null>(null);
+  
+  useEffect(() => {
+    const loadUserHierarchy = async () => {
+      if (!API_URL || !token) return;
+      try {
+        const res = await fetch(`${API_URL}/role-hierarchy/current-user/`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setUserHierarchy(data);
+        }
+      } catch (e) {
+        console.error("Failed to load user hierarchy:", e);
+      }
+    };
+    if (hasStaffRole) {
+      loadUserHierarchy();
+    }
+  }, [API_URL, token, hasStaffRole]);
+  
+  // Dynamic permission checking
+  const canManageCase = hasStaffRole; // Any non-citizen role can manage
+  const canAssign = userHierarchy?.can_assign !== false; // Default to true if not configured
+  const canChangeStatus = userHierarchy?.can_change_status !== false; // Default to true if not configured
 
   /* -------- load data -------- */
   const loadCase = async () => {
@@ -160,6 +259,63 @@ export default function CaseViewPage() {
     }
   };
 
+  // Transfer targets based on hierarchy
+  const [transferTargetOffices, setTransferTargetOffices] = useState<ApiOffice[]>([]);
+  const [loadingTransferTargets, setLoadingTransferTargets] = useState(false);
+
+  const loadTransferTargets = async () => {
+    if (!API_URL || !token) return;
+    try {
+      setLoadingTransferTargets(true);
+      const res = await fetch(`${API_URL}/role-hierarchy/transfer-targets/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const targets = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
+        const filteredTargets = targets.filter(Boolean);
+        
+        // If no specific targets found but user has transfer permissions, load all offices as fallback
+        // The backend will validate the transfer anyway
+        if (filteredTargets.length === 0 && userHierarchy !== null) {
+          // Check if user has any transfer permissions configured
+          const hasTransferPermission = userHierarchy.can_assign !== false; // Default to true
+          if (hasTransferPermission) {
+            // Load all offices - backend will validate if transfer is allowed
+            const list = await fetchAllPaginated<ApiOffice>(`${API_URL}/offices/`, headers);
+            setTransferTargetOffices(list.filter(Boolean));
+          } else {
+            setTransferTargetOffices([]);
+          }
+        } else {
+          setTransferTargetOffices(filteredTargets);
+        }
+      } else {
+        // Fallback: load all offices if hierarchy endpoint fails (but user has staff role)
+        if (hasStaffRole) {
+          const list = await fetchAllPaginated<ApiOffice>(`${API_URL}/offices/`, headers);
+          setTransferTargetOffices(list.filter(Boolean));
+        } else {
+          setTransferTargetOffices([]);
+        }
+      }
+    } catch {
+      // Fallback: load all offices on error (but user has staff role)
+      if (hasStaffRole) {
+        const list = await fetchAllPaginated<ApiOffice>(`${API_URL}/offices/`, headers);
+        setTransferTargetOffices(list.filter(Boolean));
+      } else {
+        setTransferTargetOffices([]);
+      }
+    } finally {
+      setLoadingTransferTargets(false);
+    }
+  };
+
+  // Can transfer if user has hierarchy configured
+  // Director can transfer to Mayor Office, so show button if hierarchy exists
+  // Even if no target offices found, show button and let backend validate
+  // For Director role, if hierarchy exists, they should be able to transfer
+  const canTransfer = hasStaffRole && userHierarchy !== null;
+
   const loadOffices = async () => {
     if (!API_URL || !token) return;
     try {
@@ -177,14 +333,23 @@ export default function CaseViewPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingMembers(true);
-      const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
-      const filtered = (list || []).filter((u) => {
-        const groups = (u?.groups || [])
-          .map((g) => (typeof g === "string" ? g : g?.name))
-          .filter(Boolean) as string[];
-        return !groups.includes("Citizen");
-      });
-      setMembers(filtered);
+      // Use the new assignable-users endpoint which filters based on role
+      const res = await fetch(`${API_URL}/assignments/assignable-users/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const assignableUsers = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+        setMembers(assignableUsers);
+      } else {
+        // Fallback to old method if endpoint doesn't exist yet
+        const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
+        const filtered = (list || []).filter((u) => {
+          const groups = (u?.groups || [])
+            .map((g) => (typeof g === "string" ? g : g?.name))
+            .filter(Boolean) as string[];
+          return !groups.includes("Citizen");
+        });
+        setMembers(filtered);
+      }
     } catch {
       setMembers([]);
     } finally {
@@ -193,6 +358,107 @@ export default function CaseViewPage() {
   };
 
 
+  const loadLatestAssignment = async () => {
+    if (!API_URL || !token || !id) return;
+    try {
+      setLoadingAssignment(true);
+      const res = await fetch(`${API_URL}/assignments/by-case/${id}/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        // Handle paginated response
+        const assignments = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
+        
+        // Get the latest assignment (first one since API orders by -timestamp)
+        if (assignments && assignments.length > 0) {
+          const latest = assignments[0];
+          const toUserId = latest.to_user_id;
+          
+          // Find the user name from members list or fetch if not available
+          let userName = "Unknown User";
+          const assignedUser = members.find((u) => String(u.id) === String(toUserId));
+          if (assignedUser) {
+            userName = `${assignedUser.first_name || ""} ${assignedUser.last_name || ""}`.trim() || assignedUser.email || assignedUser.username || "Unknown User";
+          } else if (toUserId) {
+            // Try to fetch user details if not in members list
+            try {
+              const userRes = await fetch(`${API_URL}/users/${toUserId}/`, { headers });
+              if (userRes.ok) {
+                const userData = await userRes.json();
+                userName = `${userData.first_name || ""} ${userData.last_name || ""}`.trim() || userData.email || userData.username || "Unknown User";
+              }
+            } catch (e) {
+              console.error("Failed to fetch user details:", e);
+            }
+          }
+          
+          setLatestAssignment({
+            to_user_id: toUserId,
+            to_user_name: userName,
+            due_date: latest.due_date || latest.countdown_days,
+            timestamp: latest.timestamp || latest.created_at,
+          });
+        } else {
+          setLatestAssignment(null);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load assignment:", e);
+      setLatestAssignment(null);
+    } finally {
+      setLoadingAssignment(false);
+    }
+  };
+
+  const loadLatestTransfer = async () => {
+    if (!API_URL || !token || !id) return;
+    try {
+      setLoadingTransfer(true);
+      const res = await fetch(`${API_URL}/transfers/by-case/${id}/`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        // Handle paginated response
+        const transfers = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
+        
+        // Get the latest transfer (first one since API orders by -timestamp)
+        if (transfers && transfers.length > 0) {
+          const latest = transfers[0];
+          const toOfficeId = latest.to_office_id;
+          
+          // Find the office name from offices list or fetch if not available
+          let officeName = "Unknown Office";
+          const transferredOffice = offices.find((o) => String(o.id) === String(toOfficeId));
+          if (transferredOffice) {
+            officeName = transferredOffice.name;
+          } else if (toOfficeId) {
+            // Try to fetch office details if not in offices list
+            try {
+              const officeRes = await fetch(`${API_URL}/offices/${toOfficeId}/`, { headers });
+              if (officeRes.ok) {
+                const officeData = await officeRes.json();
+                officeName = officeData.name || "Unknown Office";
+              }
+            } catch (e) {
+              console.error("Failed to fetch office details:", e);
+            }
+          }
+          
+          setLatestTransfer({
+            to_office_id: toOfficeId,
+            to_office_name: officeName,
+            timestamp: latest.timestamp || latest.created_at,
+          });
+        } else {
+          setLatestTransfer(null);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load transfer:", e);
+      setLatestTransfer(null);
+    } finally {
+      setLoadingTransfer(false);
+    }
+  };
+
   useEffect(() => {
     loadCase();
     loadOffices();
@@ -200,13 +466,65 @@ export default function CaseViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Load transfer targets when user hierarchy is available
+  useEffect(() => {
+    if (hasStaffRole && userHierarchy !== null) {
+      loadTransferTargets();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasStaffRole, userHierarchy]);
+
+  // Load assignment and transfer when case, members, and offices are loaded
+  useEffect(() => {
+    if (caseData && id && members.length > 0) {
+      loadLatestAssignment();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseData, id, members]);
+
+  useEffect(() => {
+    if (caseData && id && offices.length > 0) {
+      loadLatestTransfer();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseData, id, offices]);
+
+  // Reload assignment and transfer data when page becomes visible or window regains focus
+  // (e.g., returning from activity page where records might have been deleted)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && caseData && id) {
+        if (members.length > 0) loadLatestAssignment();
+        if (offices.length > 0) loadLatestTransfer();
+      }
+    };
+
+    const handleFocus = () => {
+      if (caseData && id) {
+        if (members.length > 0) loadLatestAssignment();
+        if (offices.length > 0) loadLatestTransfer();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [caseData, id, members.length, offices.length]);
+
   /* -------- options -------- */
+  // Use transfer targets if available (hierarchy-based), otherwise fallback to all offices
   const officeOptions = useMemo(
-    () =>
-      offices
+    () => {
+      const source = transferTargetOffices.length > 0 ? transferTargetOffices : offices;
+      return source
         .map((o) => ({ id: String(o.id), label: o.name }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [offices],
+        .sort((a, b) => a.label.localeCompare(b.label));
+    },
+    [transferTargetOffices, offices],
   );
 
   const memberOptions = useMemo(
@@ -245,6 +563,18 @@ export default function CaseViewPage() {
     setModalOpen("status");
   };
 
+  const openAppeal = () => {
+    setAppealReason("");
+    setAppealOfficeId(caseData?.office_id ? String(caseData.office_id) : "");
+    setModalOpen("appeal");
+  };
+
+  const openFeedback = () => {
+    setFeedbackRating(5);
+    setFeedbackComment("");
+    setModalOpen("feedback");
+  };
+
   /* -------- endpoints -------- */
   const TRANSFER_URL = API_URL ? `${API_URL}/transfers/` : "";
   const ASSIGN_URL = API_URL ? `${API_URL}/assignments/` : "";
@@ -259,14 +589,27 @@ export default function CaseViewPage() {
   /* -------- action handlers -------- */
   const handleTransfer = async () => {
     if (!TRANSFER_URL || !token) return setError("Missing API URL or auth");
-    if (!selectedOfficeId) return;
-    if (!currentOfficeId) return setError("Your office is unknown (office_id missing).");
-    if (!transferReason.trim()) return;
+    if (!selectedOfficeId) {
+      setError("Please select an office to transfer to.");
+      return;
+    }
+    if (!transferReason.trim()) {
+      setError("Please provide a reason for the transfer.");
+      return;
+    }
+    
+    // Use case's current office as from_office, or fallback to selected office if none
+    const fromOfficeId = caseData?.office_id ? String(caseData.office_id) : selectedOfficeId;
+    if (fromOfficeId === selectedOfficeId) {
+      setError("Cannot transfer to the same office.");
+      return;
+    }
 
     try {
+      setError("");
       const payload = {
         case_id: String(id),
-        from_office_id: String(currentOfficeId),
+        from_office_id: fromOfficeId,
         to_office_id: String(selectedOfficeId),
         reason: transferReason.trim(),
       };
@@ -284,6 +627,8 @@ export default function CaseViewPage() {
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadCase();
+      await loadOffices(); // Reload offices to update transfer display
+      await loadLatestTransfer(); // Reload latest transfer
     } catch (e: any) {
       setError(e?.message || "Transfer failed");
     }
@@ -291,13 +636,19 @@ export default function CaseViewPage() {
 
   const handleAssign = async () => {
     if (!ASSIGN_URL || !token) return setError("Missing API URL or auth");
-    if (!selectedMemberId) return;
-    if (!currentUserId) return setError("Your user id is unknown (user_id missing).");
-    if (!assignReason.trim()) return;
+    if (!selectedMemberId) {
+      setError("Please select a user to assign to.");
+      return;
+    }
+    if (!assignReason.trim()) {
+      setError("Please provide a reason for the assignment.");
+      return;
+    }
 
     const days = Number(assignDueDays);
     if (!Number.isFinite(days) || days <= 0) {
-      return setError("Please provide a valid countdown days (minimum 1).");
+      setError("Please provide a valid number of days (minimum 1).");
+      return;
     }
 
     // compute due date (today + days) -> YYYY-MM-DD
@@ -306,16 +657,18 @@ export default function CaseViewPage() {
     const dueDateISO = dueDate.toISOString().slice(0, 10);
 
     try {
-      const payload = {
+      setError("");
+      const payload: any = {
         case_id: String(id),
-        from_user_id: String(currentUserId),
         to_user_id: String(selectedMemberId),
         reason: assignReason.trim(),
-
-        // IMPORTANT: backend expects dates here
-        countdown_days: dueDateISO,   // <-- DateField, so send YYYY-MM-DD
-        due_date: dueDateISO,         // <-- DateField, send the same computed date
+        due_date: dueDateISO,
       };
+      
+      // Only include from_user_id if we have a current user ID
+      if (currentUserId) {
+        payload.from_user_id = String(currentUserId);
+      }
 
       const res = await fetch(ASSIGN_URL, {
         method: "POST",
@@ -331,6 +684,8 @@ export default function CaseViewPage() {
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadCase();
+      await loadMembers(); // Reload members to update assignment display
+      await loadLatestAssignment(); // Reload latest assignment
     } catch (e: any) {
       setError(e?.message || "Assignment failed");
     }
@@ -339,6 +694,7 @@ export default function CaseViewPage() {
   const handleChangeStatus = async () => {
     if (!API_URL || !token) return setError("Missing API URL or auth");
     try {
+      setError("");
       const apiStatus = uiToApiStatus[selectedStatusUI] || "pending";
       const res = await fetch(`${API_URL}/cases/${id}/`, {
         method: "PATCH",
@@ -359,6 +715,68 @@ export default function CaseViewPage() {
     }
   };
 
+  const handleSubmitAppeal = async () => {
+    if (!token) return setError("Missing authentication");
+    if (!appealReason.trim()) {
+      setError("Please provide a reason for the appeal.");
+      return;
+    }
+
+    try {
+      setError("");
+      setSubmittingAppeal(true);
+      await submitCaseAppeal(
+        String(id),
+        appealReason.trim(),
+        appealOfficeId || undefined,
+        token,
+      );
+      setModalOpen(null);
+      setSuccessMsg("Appeal submitted successfully. A new case has been created for your appeal.");
+      setSuccessOpen(true);
+      setTimeout(() => setSuccessOpen(false), 3000);
+      await loadCase();
+      setAppealReason("");
+      setAppealOfficeId("");
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || "Failed to submit appeal";
+      setError(errorMsg);
+    } finally {
+      setSubmittingAppeal(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!token) return setError("Missing authentication");
+    if (!feedbackRating || feedbackRating < 1 || feedbackRating > 5) {
+      setError("Please select a rating between 1 and 5.");
+      return;
+    }
+
+    try {
+      setError("");
+      setSubmittingFeedback(true);
+      await submitCaseFeedback(
+        String(id),
+        feedbackRating,
+        feedbackComment.trim(),
+        token,
+      );
+      setModalOpen(null);
+      setSuccessMsg("Feedback submitted successfully. Thank you for your feedback!");
+      setSuccessOpen(true);
+      setTimeout(() => setSuccessOpen(false), 3000);
+      await loadCase();
+      setFeedbackRating(5);
+      setFeedbackComment("");
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || "Failed to submit feedback";
+      setError(errorMsg);
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
   /* -------- derived -------- */
   const computedDueDate = useMemo(() => {
     const days = Number(assignDueDays);
@@ -369,26 +787,36 @@ export default function CaseViewPage() {
   }, [assignDueDays]);
 
   /* -------- render -------- */
-  if (loading) return <div className="p-6 text-gray-500">Loading...</div>;
-
-  if (error) {
+  if (loading) {
     return (
-      <div className="p-6 text-center text-red-500">
-        {error}
-        <Button onClick={() => router.push("/cases")} className="ml-4">
-          Back
-        </Button>
-      </div>
+      <>
+        <Breadcrumb pageName={`Case #${id}`} />
+        <div className="p-6 text-center text-gray-500 dark:text-gray-300">Loading...</div>
+      </>
     );
   }
+
+  if (error && !caseData) {
+    return (
+      <>
+        <Breadcrumb pageName={`Case #${id}`} />
+        <div className="p-6 text-center">
+          <p className="mb-4 text-red-500">{error}</p>
+          <Button onClick={() => router.push("/cases")}>Back to Cases</Button>
+      </div>
+      </>
+    );
+  }
+  
   if (!caseData) {
     return (
-      <div className="p-6 text-center text-red-500">
-        Case not found.
-        <Button onClick={() => router.push("/cases")} className="ml-4">
-          Back
-        </Button>
+      <>
+        <Breadcrumb pageName={`Case #${id}`} />
+        <div className="p-6 text-center">
+          <p className="mb-4 text-red-500">Case not found.</p>
+          <Button onClick={() => router.push("/cases")}>Back to Cases</Button>
       </div>
+      </>
     );
   }
 
@@ -396,6 +824,9 @@ export default function CaseViewPage() {
   const isClosed = titleCaseStatus === "Closed";
 
   return (
+    <>
+      <Breadcrumb pageName={`Case #${id}`} />
+      
     <div className="p-6">
       <Button
         variant="ghost"
@@ -405,12 +836,18 @@ export default function CaseViewPage() {
         <ArrowLeft className="h-4 w-4" /> Back to Cases
       </Button>
 
-      <Card className="shadow-lg border rounded-2xl max-w-3xl mx-auto bg-white dark:bg-gray-900">
-        <CardHeader>
-          <CardTitle className="text-xl font-bold">{caseData.title}</CardTitle>
+        <Card className={cn("rounded-[10px] bg-white p-5 shadow-1 dark:bg-gray-dark dark:shadow-card max-w-4xl mx-auto")}>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-2xl font-bold text-dark dark:text-white">{caseData.title}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6 text-gray-700 dark:text-gray-300">
-          <div className="grid grid-cols-2 gap-4">
+        <CardContent className="space-y-6">
+          {error && (
+            <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
+              {error}
+            </div>
+          )}
+          
+          <div className="grid grid-cols-2 gap-4 text-gray-700 dark:text-gray-300">
             <div>
               <p className="font-semibold">Category</p>
               <p className="capitalize">{caseData.category_id || "—"}</p>
@@ -452,21 +889,106 @@ export default function CaseViewPage() {
             </p>
           </div>
 
+          {/* Attachments Section */}
+          {caseData.attachments && Array.isArray(caseData.attachments) && caseData.attachments.length > 0 && (
+            <div>
+              <p className="mb-3 font-semibold text-dark dark:text-white">Attachments</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {caseData.attachments.map((att: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between rounded-md border border-stroke bg-gray-50 p-4 dark:border-dark-3 dark:bg-dark-2 hover:bg-gray-100 dark:hover:bg-dark-3 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex-shrink-0">
+                        <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-medium text-dark dark:text-white">
+                          {att.name || `Attachment ${idx + 1}`}
+                        </p>
+                        {att.size && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {(att.size / 1024).toFixed(1)} KB
+                            {att.type && ` • ${att.type.split('/')[1]?.toUpperCase() || 'File'}`}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {att.data && (
+                      <Button
+                        onClick={() => {
+                          if (!att.data) return;
+                          
+                          // Handle base64 data URLs
+                          if (att.data.startsWith('data:')) {
+                            // Create a blob from the data URL
+                            const byteString = atob(att.data.split(',')[1]);
+                            const mimeString = att.data.split(',')[0].split(':')[1].split(';')[0];
+                            const ab = new ArrayBuffer(byteString.length);
+                            const ia = new Uint8Array(ab);
+                            for (let i = 0; i < byteString.length; i++) {
+                              ia[i] = byteString.charCodeAt(i);
+                            }
+                            const blob = new Blob([ab], { type: mimeString });
+                            const blobUrl = URL.createObjectURL(blob);
+                            
+                            // Open in new window for images and PDFs, download for others
+                            if (att.type?.startsWith('image/') || att.type === 'application/pdf') {
+                              const newWindow = window.open(blobUrl, '_blank');
+                              if (!newWindow) {
+                                // Fallback to download if popup blocked
+                                const link = document.createElement('a');
+                                link.href = blobUrl;
+                                link.download = att.name || 'attachment';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }
+                              // Clean up blob URL after a delay
+                              setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                            } else {
+                              // Download other file types
+                              const link = document.createElement('a');
+                              link.href = blobUrl;
+                              link.download = att.name || 'attachment';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                            }
+                          } else {
+                            // Regular URL - open in new tab
+                            window.open(att.data, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                        className="ml-2 flex items-center gap-1 rounded bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary/90 transition-colors"
+                      >
+                        <Download className="h-3 w-3" />
+                        View
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
-          {role === "Citizen" ? (
+          {isCitizen ? (
             <div className="flex gap-3 pt-4">
               {isClosed ? (
                 <>
                   <Button
                     className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
-                    onClick={() => router.push(`/cases/${caseData.id}/appeal`)}
+                    onClick={openAppeal}
                   >
                     Submit Appeal
                   </Button>
                   <Button
                     variant="outline"
                     className="rounded-lg"
-                    onClick={() => router.push(`/cases/${caseData.id}/feedback`)}
+                    onClick={openFeedback}
                   >
                     Give Feedback
                   </Button>
@@ -481,29 +1003,118 @@ export default function CaseViewPage() {
               )}
             </div>
           ) : (
-            role &&
-            actionRoles.includes(role) && (
-              <div className="flex gap-3 pt-4">
+            canManageCase && (
+              <>
+                <div className="flex flex-wrap gap-3 pt-4">
+                  {canTransfer && (
                 <Button
                   variant="outline"
-                  className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400"
+                      className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openTransfer}
+                      disabled={!!latestTransfer}
+                      title={latestTransfer ? "Case has already been transferred. Delete the transfer record to enable this action." : "Transfer case to another office"}
                 >
                   Transfer
                 </Button>
+                  )}
+                  {canAssign && (
                 <Button
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                      className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openAssign}
+                      disabled={!!latestAssignment}
+                      title={latestAssignment ? "Case has already been assigned. Delete the assignment record to enable this action." : "Assign case to a user"}
                 >
                   Assign
                 </Button>
+                  )}
+                  {canChangeStatus && (
                 <Button
                   className="rounded-lg bg-green-600 hover:bg-green-700 text-white"
                   onClick={openChangeStatus}
                 >
                   Change Status
                 </Button>
+                  )}
               </div>
+
+                {/* Assignment and Transfer Info */}
+                <div className="mt-4 space-y-3 rounded-md border border-stroke bg-gray-50 p-4 dark:border-dark-3 dark:bg-dark-2">
+                  {/* Status Display */}
+                  <div className="flex items-center gap-2 border-b border-stroke pb-2 dark:border-dark-3">
+                    <span className="font-semibold text-dark dark:text-white">Current Status:</span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        statusColors[titleCaseStatus] || ""
+                      }`}
+                    >
+                      {titleCaseStatus}
+                    </span>
+                  </div>
+
+                  {/* Assignment Info */}
+                  {latestAssignment && latestAssignment.to_user_name ? (
+                    <div className="flex items-start gap-2">
+                      <span className="font-semibold text-dark dark:text-white min-w-[120px]">Assigned to:</span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-900 dark:text-gray-100">{latestAssignment.to_user_name}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(Assignment active)</span>
+                        </div>
+                        {latestAssignment.due_date && (
+                          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                            Due: {new Date(latestAssignment.due_date).toLocaleDateString()}
+                          </div>
+                        )}
+                        {latestAssignment.timestamp && (
+                          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Assigned on: {new Date(latestAssignment.timestamp).toLocaleDateString()}
+                          </div>
+                        )}
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                          Note: Delete the assignment record from Activity page to enable reassignment.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Transfer Info */}
+                  {latestTransfer && latestTransfer.to_office_name ? (
+                    <div className="flex items-start gap-2">
+                      <span className="font-semibold text-dark dark:text-white min-w-[120px]">Transferred to:</span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-900 dark:text-gray-100">{latestTransfer.to_office_name}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(Transfer active)</span>
+                        </div>
+                        {latestTransfer.timestamp && (
+                          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Transferred on: {new Date(latestTransfer.timestamp).toLocaleDateString()}
+                          </div>
+                        )}
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                          Note: Delete the transfer record from Activity page to enable retransfer.
+                        </div>
+                      </div>
+                    </div>
+                  ) : caseData?.office_id ? (
+                    <div className="flex items-start gap-2">
+                      <span className="font-semibold text-dark dark:text-white min-w-[120px]">Current Office:</span>
+                      <div className="flex-1">
+                        <span className="text-gray-900 dark:text-gray-100">
+                          {offices.find((o) => String(o.id) === String(caseData.office_id))?.name || "Unknown Office"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* No assignment/transfer info message */}
+                  {!latestAssignment && !latestTransfer && !caseData?.office_id && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      No assignment or transfer information available.
+                    </div>
+                  )}
+                </div>
+              </>
             )
           )}
         </CardContent>
@@ -676,6 +1287,129 @@ export default function CaseViewPage() {
         </div>
       </AnimatedModal>
 
+      {/* Appeal Modal */}
+      <AnimatedModal
+        open={modalOpen === "appeal"}
+        onClose={() => setModalOpen(null)}
+        title="Submit Appeal"
+        maxWidthClassName="max-w-md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Appeal Reason *</label>
+            <textarea
+              value={appealReason}
+              onChange={(e) => setAppealReason(e.target.value)}
+              placeholder="Please explain why you are appealing this case resolution..."
+              rows={5}
+              className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              A new appeal case will be created based on your original case.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Transfer to Office (Optional)</label>
+            <select
+              className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+              value={appealOfficeId}
+              onChange={(e) => setAppealOfficeId(e.target.value)}
+            >
+              <option value="">— Use Current Office —</option>
+              {loadingOffices ? (
+                <option disabled>Loading…</option>
+              ) : (
+                offices.map((o) => (
+                  <option key={o.id} value={String(o.id)}>
+                    {o.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          {error && <div className="text-sm text-red-500">{error}</div>}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="ghost" onClick={() => setModalOpen(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={handleSubmitAppeal}
+              disabled={!appealReason.trim() || submittingAppeal}
+            >
+              {submittingAppeal ? "Submitting..." : "Submit Appeal"}
+            </Button>
+          </div>
+        </div>
+      </AnimatedModal>
+
+      {/* Feedback Modal */}
+      <AnimatedModal
+        open={modalOpen === "feedback"}
+        onClose={() => setModalOpen(null)}
+        title="Give Feedback"
+        maxWidthClassName="max-w-md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Rating *</label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  type="button"
+                  onClick={() => setFeedbackRating(rating)}
+                  className={cn(
+                    "flex-1 rounded-lg border-2 p-3 text-center font-semibold transition",
+                    feedbackRating === rating
+                      ? "border-primary bg-primary text-white"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-primary dark:border-dark-3 dark:bg-dark-2 dark:text-gray-300",
+                  )}
+                >
+                  {rating}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {feedbackRating === 1 && "Very Dissatisfied"}
+              {feedbackRating === 2 && "Dissatisfied"}
+              {feedbackRating === 3 && "Neutral"}
+              {feedbackRating === 4 && "Satisfied"}
+              {feedbackRating === 5 && "Very Satisfied"}
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Comments (Optional)</label>
+            <textarea
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              placeholder="Share your thoughts about how this case was handled..."
+              rows={4}
+              className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
+            />
+          </div>
+
+          {error && <div className="text-sm text-red-500">{error}</div>}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="ghost" onClick={() => setModalOpen(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleSubmitFeedback}
+              disabled={!feedbackRating || submittingFeedback}
+            >
+              {submittingFeedback ? "Submitting..." : "Submit Feedback"}
+            </Button>
+          </div>
+        </div>
+      </AnimatedModal>
+
       {/* Success Modal */}
       <SuccessModal
         open={successOpen}
@@ -685,5 +1419,6 @@ export default function CaseViewPage() {
         autoCloseMs={3000}
       />
     </div>
+    </>
   );
 }

@@ -12,8 +12,8 @@ import { redirect } from "next/navigation";
 import { TopSources } from "@/components/Tables/top-sources"; // (you import it, add/use it if needed)
 
 type PropsType = {
-  params: { role?: string };
-  searchParams: { selected_time_frame?: string };
+  params: Promise<{ role?: string }>;
+  searchParams: Promise<{ selected_time_frame?: string }>;
 };
 
 function toTitleCase(input?: string) {
@@ -22,8 +22,8 @@ function toTitleCase(input?: string) {
 }
 
 export default async function RoleDashboardPage({ params, searchParams }: PropsType) {
-  const role = params?.role; // no await
-  const selected_time_frame = searchParams?.selected_time_frame; // no await
+  const { role } = await params;
+  const { selected_time_frame } = await searchParams;
 
   const extract = createTimeFrameExtractor(selected_time_frame);
   const roleTitle = toTitleCase(role); // now safe even if role is undefined

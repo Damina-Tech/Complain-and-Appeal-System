@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NAV_DATA } from "./data";
+import { defaultRouteForRole, slugFromRole } from "@/lib/role";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
 import { MenuItem } from "./menu-item";
 import { useSidebarContext } from "./sidebar-context";
@@ -41,6 +42,131 @@ export function Sidebar() {
       });
     });
   }, [pathname]);
+
+  // Get user groups from localStorage (dynamic role checking)
+  const [userGroups, setUserGroups] = useState<string[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
+
+  useEffect(() => {
+    const loadUserGroups = async () => {
+      if (typeof window === "undefined") {
+        setIsLoadingGroups(false);
+        return;
+      }
+
+      // Always fetch from API to ensure we have the latest groups
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          const API_URL = process.env.NEXT_PUBLIC_API_URL;
+          const res = await fetch(`${API_URL}/auth/me/`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const groups = (data.user_groups || []).map((g: string) => g).filter(Boolean);
+            setUserGroups(groups);
+            localStorage.setItem("user_groups", JSON.stringify(groups));
+            console.log("✅ Sidebar loaded user groups from API:", groups);
+            setIsLoadingGroups(false);
+            return;
+          } else {
+            console.error("❌ Failed to fetch user groups:", res.status, res.statusText);
+          }
+        } catch (e) {
+          console.error("❌ Failed to load user groups:", e);
+        }
+      }
+
+      // Fallback to localStorage if API fails
+      try {
+        const raw = localStorage.getItem("user_groups");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const groups = parsed
+              .map((g) => (typeof g === "string" ? g : g?.name))
+              .filter(Boolean) as string[];
+            setUserGroups(groups);
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+      
+      setIsLoadingGroups(false);
+    };
+
+    loadUserGroups();
+    
+    // Reload when pathname changes (e.g., after login redirect)
+    const handleFocus = () => {
+      loadUserGroups();
+    };
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [pathname]);
+
+  // Fallback: also check role from localStorage if user_groups not loaded
+  const roleFromStorage =
+    typeof window !== "undefined" ? localStorage.getItem("role") : null;
+
+  // Check if user has Admin role (full system access)
+  const hasAdmin = userGroups.includes("Admin");
+  
+  // Check if user has Mayor Office role (highest level - should have all access)
+  const hasMayorOffice = userGroups.includes("Mayor Office");
+  
+  // Check if user has any staff role (non-citizen)
+  const hasStaffRole = userGroups.some((role) => role !== "Citizen") || 
+    (roleFromStorage && roleFromStorage !== "Citizen");
+
+  // Debug: Log user groups for troubleshooting
+  useEffect(() => {
+    if (userGroups.length > 0) {
+      console.log("Sidebar - User Groups:", userGroups);
+      console.log("Sidebar - Has Admin:", hasAdmin);
+      console.log("Sidebar - Has Mayor Office:", hasMayorOffice);
+    }
+  }, [userGroups, hasAdmin, hasMayorOffice]);
+
+  // Dynamic filter: Admin and Mayor Office get all access, others check allowedRoles
+  const filterByRole = (
+    items: Array<{ allowedRoles?: string[] } & Record<string, any>>,
+  ) => {
+    // Admin gets full access - bypass all checks
+    if (hasAdmin) {
+      return items;
+    }
+    
+    // Mayor Office also gets full access
+    if (hasMayorOffice) {
+      return items;
+    }
+    
+    return items.filter((it) => {
+      // If no allowedRoles specified, allow access
+      if (!it.allowedRoles || it.allowedRoles.length === 0) {
+        return true;
+      }
+      
+      // Check if user has any of the allowed roles
+      const hasAllowedRole = userGroups.some((userRole) =>
+        it.allowedRoles!.includes(userRole)
+      );
+      
+      // Fallback: check roleFromStorage if userGroups is empty
+      if (!hasAllowedRole && roleFromStorage) {
+        return it.allowedRoles.includes(roleFromStorage);
+      }
+      
+      return hasAllowedRole;
+    });
+  };
 
   return (
     <>
@@ -87,21 +213,27 @@ export function Sidebar() {
 
           {/* Navigation */}
           <div className="custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 min-[850px]:mt-10">
-            {NAV_DATA.map((section) => (
-              <div key={section.label} className="mb-6">
-                <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
-                  {section.label}
-                </h2>
+            {isLoadingGroups ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-sm text-dark-6 dark:text-dark-6">Loading...</div>
+              </div>
+            ) : (
+              NAV_DATA.map((section) => (
+                <div key={section.label} className="mb-6">
+                  <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
+                    {section.label}
+                  </h2>
 
-                <nav role="navigation" aria-label={section.label}>
-                  <ul className="space-y-2">
-                    {section.items.map((item) => (
+                  <nav role="navigation" aria-label={section.label}>
+                    <ul className="space-y-2">
+                      {filterByRole(section.items).map((item) => (
                       <li key={item.title}>
                         {item.items.length ? (
                           <div>
                             <MenuItem
                               isActive={item.items.some(
-                                ({ url }) => url === pathname,
+                                (subItem: { url?: string }) =>
+                                  subItem.url === pathname,
                               )}
                               onClick={() => toggleExpanded(item.title)}
                             >
@@ -127,11 +259,15 @@ export function Sidebar() {
                                 className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
                                 role="menu"
                               >
-                                {item.items.map((subItem) => (
+                                {filterByRole(item.items).map((subItem) => (
                                   <li key={subItem.title} role="none">
                                     <MenuItem
                                       as="link"
-                                      href={subItem.url}
+                                      href={
+                                        subItem.url === "/dashboard" && (userGroups.length > 0 || roleFromStorage)
+                                          ? defaultRouteForRole(userGroups[0] || roleFromStorage)
+                                          : subItem.url
+                                      }
                                       isActive={pathname === subItem.url}
                                     >
                                       <span>{subItem.title}</span>
@@ -148,12 +284,16 @@ export function Sidebar() {
                                 ? item.url + ""
                                 : "/" +
                                   item.title.toLowerCase().split(" ").join("-");
+                            const finalHref =
+                              href === "/dashboard" && (userGroups.length > 0 || roleFromStorage)
+                                ? defaultRouteForRole(userGroups[0] || roleFromStorage)
+                                : href;
 
                             return (
                               <MenuItem
                                 className="flex items-center gap-3 py-3"
                                 as="link"
-                                href={href}
+                                href={finalHref}
                                 isActive={pathname === href}
                               >
                                 <item.icon
@@ -167,14 +307,16 @@ export function Sidebar() {
                           })()
                         )}
                       </li>
-                    ))}
-                  </ul>
-                </nav>
-              </div>
-            ))}
+                      ))}
+                    </ul>
+                  </nav>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </aside>
     </>
   );
 }
+

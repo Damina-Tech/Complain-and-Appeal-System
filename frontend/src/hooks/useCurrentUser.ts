@@ -45,7 +45,7 @@ export function useCurrentUser() {
         setUser({
           name,
           email: data.email ?? "",
-          img: data.avatar_url || data.image || undefined, // keep provided image if available
+          img: data.profile_image_url || data.avatar_url || data.image || undefined, // keep provided image if available
         });
       } catch (e) {
         // Optional: handle/log error

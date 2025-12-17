@@ -1,3 +1,4 @@
+import { url } from "inspector";
 import * as Icons from "../icons";
 
 export const NAV_DATA = [
@@ -7,81 +8,139 @@ export const NAV_DATA = [
       {
         title: "Dashboard",
         icon: Icons.HomeIcon,
+        allowedRoles: [
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
         items: [
           {
             title: "Dashboard",
-            url: "/",
+            url: "/dashboard",
           },
         ],
       },
       {
-        title: "New Complaint / Appeal",
+        title: "User Management",
+        icon: Icons.User,
+        allowedRoles: [
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
+        items: [
+          { title: "User", url: "/users",
+            allowedRoles: [
+              "Focal Person",
+              "Director",
+              "Mayor Office",
+              "Admin",
+            ],
+          },
+          { title: "Role", url: "/roles",
+            allowedRoles: [
+              "Admin",
+            ], 
+          },
+          { title: "Office", url: "/offices",
+            allowedRoles: [
+              "Director",
+              "Mayor Office",
+              "Admin",
+            ], 
+          },
+        ],
+      },
+      {
+        title: "Complaint / Appeal",
         url: "/cases",
         icon: Icons.Calendar,
+        allowedRoles: [
+          "Citizen",
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
         items: [],
       },
       {
-        title: "Profile",
-        url: "/profile",
-        icon: Icons.User,
+        title: "Transfers",
+        url: "/cases/activity",
+        icon: Icons.ReferralAvatar,
+        allowedRoles: [
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
         items: [],
       },
       {
-        title: "Forms",
-        url: "/forms",
-        icon: Icons.Alphabet,
-        items: [],
-      },
-      {
-        title: "Tables",
-        url: "/tables",
+        title: "My Assigned Cases",
+        url: "/cases/my-assigned",
         icon: Icons.Table,
+        allowedRoles: [
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
         items: [],
       },
       {
-        title: "Pages",
+        title: "Feedback / Appeal",
+        url: "/feedback-appeal",
+        icon: Icons.MessageCircle,
+        allowedRoles: [
+          "Focal Person",
+          "Director",
+          "Admin",
+        ],
+        items: [],
+      },
+      {
+        title: "Reports",
+        url: "/reports",
+        icon: Icons.ReportsAvatar,
+        allowedRoles: ["Director", "Mayor Office", "Admin"],
+        items: [],
+      },
+      {
+        title: "Announcements",
+        icon: Icons.AnnouncementsAvatar,
+        allowedRoles: [
+          "Citizen",
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
+        items: [],
+      },
+      {
+        title: "Help & Guidelines",
+        url: "/help-guidelines",
         icon: Icons.Alphabet,
+        allowedRoles: [
+          "Citizen",
+          "Focal Person",
+          "Director",
+          "Mayor Office",
+          "Admin",
+        ],
+        items: [],
+      },
+      {
+        title: "System Settings",
+        url: "/settings",
+        icon: Icons.Settings,
+        allowedRoles: ["Admin"],
         items: [],
       },
     ],
   },
-  {
-    label: "OTHERS",
-    items: [
-      {
-        title: "Charts",
-        icon: Icons.PieChart,
-        items: [
-          {
-            title: "Basic Chart",
-            url: "/charts/basic-chart",
-          },
-        ],
-      },
-      {
-        title: "UI Elements",
-        icon: Icons.FourCircle,
-        items: [
-          {
-            title: "Alerts",
-            url: "/ui-elements/alerts",
-          },
-          {
-            title: "Buttons",
-            url: "/ui-elements/buttons",
-          },
-        ],
-      },
-      {
-        title: "Authentication",
-        icon: Icons.Authentication,
-        items: [
-          {
-            title: "Sign In",
-            url: "/auth/sign-in",
-          },
-        ],
-      },
-    ],
-  },
+
 ];

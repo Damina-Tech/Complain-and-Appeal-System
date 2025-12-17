@@ -2,8 +2,12 @@
 import { EmailIcon, PasswordIcon } from "@/assets/icons";
 import Link from "next/link";
 import React, { useState } from "react";
-import InputGroup from "../FormElements/InputGroup";
+import InputGroup from "../FormElements/InputGroup/index";
 import { Checkbox } from "../FormElements/checkbox";
+import { useRouter } from "next/navigation";
+import { loginUser } from "@/utils/api";
+import { defaultRouteForRole } from "@/lib/role";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function SigninWithPassword() {
   const [data, setData] = useState({
@@ -13,6 +17,9 @@ export default function SigninWithPassword() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setData({
@@ -21,15 +28,48 @@ export default function SigninWithPassword() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    // You can remove this code block
     setLoading(true);
+    setError("");
 
-    setTimeout(() => {
+    try {
+      const response = await loginUser(data.email, data.password); // call Django API
+      localStorage.setItem("token", response.access); // save JWT
+      if (response.role) {
+        localStorage.setItem("role", response.role);
+      }
+      if (response.user_id) {
+        localStorage.setItem("user_id", String(response.user_id));
+      }
+      // Fetch user groups from /auth/me endpoint after login
+      if (response.access) {
+        try {
+          const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me/`, {
+            headers: { Authorization: `Bearer ${response.access}` },
+            cache: "no-store",
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData.user_groups && Array.isArray(meData.user_groups)) {
+              const groups = meData.user_groups.map((g: string) => g).filter(Boolean);
+              localStorage.setItem("user_groups", JSON.stringify(groups));
+              console.log("User groups stored after login:", groups);
+            }
+          } else {
+            console.error("Failed to fetch user info:", meRes.status, meRes.statusText);
+          }
+        } catch (e) {
+          console.error("Failed to fetch user groups:", e);
+        }
+      }
       setLoading(false);
-    }, 1000);
+      const role = (response.role || "").toString();
+      router.push(defaultRouteForRole(role));
+    } catch (err: any) {
+      setLoading(false);
+      setError("Invalid email or password");
+    }
   };
 
   return (
@@ -42,19 +82,29 @@ export default function SigninWithPassword() {
         name="email"
         handleChange={handleChange}
         value={data.email}
-        icon={<EmailIcon />}
+        
       />
 
       <InputGroup
-        type="password"
+        type={showPassword ? "text" : "password"}
         label="Password"
         className="mb-5 [&_input]:py-[15px]"
         placeholder="Enter your password"
         name="password"
         handleChange={handleChange}
         value={data.password}
-        icon={<PasswordIcon />}
+        endIcon={
+          <button
+            type="button"
+            onClick={() => setShowPassword((prev) => !prev)}
+            className="flex h-5 w-5 items-center justify-center text-dark-6 transition hover:text-primary focus-visible:outline-none"
+          >
+            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+          </button>
+        }
       />
+
+       {error && <p className="mb-4 text-red-500">{error}</p>}
 
       <div className="mb-6 flex items-center justify-between gap-2 py-2 font-medium">
         <Checkbox

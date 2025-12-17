@@ -9,10 +9,10 @@ import { Header } from "./Layouts/header";
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const isAuthRoute = pathname?.startsWith("/auth");
-	const publicRoutes = new Set(["/", "/about", "/services", "/contact"]);
-	const isPublicRoute = pathname ? publicRoutes.has(pathname) : false;
+	const isRootRoute = pathname === "/";
 
-	if (isAuthRoute || isPublicRoute) {
+	// Don't wrap auth routes or root route with dashboard layout
+	if (isAuthRoute || isRootRoute) {
 		return <>{children}</>;
 	}
 

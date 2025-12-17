@@ -36,7 +36,7 @@ type OfficeRow = {
   phone_number: string;
   email: string;
   address: string;
-  representative_id: string | number | null;
+  representative_id: string | number | "";
   representative_name: string; // resolved using repMap if backend doesn't provide
   created_at: string;
 };
@@ -57,7 +57,7 @@ const mapOfficeRow = (o: ApiOffice): OfficeRow => ({
   phone_number: o.phone_number || "",
   email: o.email || "",
   address: o.address || "",
-  representative_id: o.office_representative ?? null,
+  representative_id: o.office_representative != null ? String(o.office_representative) : "",
   representative_name: o.representative_name || "", // will be backfilled from repMap if empty
   created_at: o.created_at ? String(o.created_at).slice(0, 10) : "—",
 });
@@ -70,7 +70,9 @@ export default function OfficesPage() {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders: HeadersInit | undefined = token
+    ? { Authorization: `Bearer ${token}` }
+    : undefined;
 
   // Table + filters
   const [offices, setOffices] = useState<OfficeRow[]>([]);
@@ -135,9 +137,13 @@ export default function OfficesPage() {
     let nextUrl: string | null = startUrl;
 
     while (nextUrl) {
-      const res = await fetch(nextUrl, { headers: authHeaders, cache: "no-store" });
+      const requestInit: RequestInit = { cache: "no-store" };
+      if (authHeaders) {
+        requestInit.headers = authHeaders;
+      }
+      const res: Response = await fetch(nextUrl, requestInit);
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-      const data = await res.json();
+      const data: any = await res.json();
 
       if (Array.isArray(data)) {
         all = all.concat(data as T[]);
@@ -167,50 +173,69 @@ export default function OfficesPage() {
 
   /* ------------- Load data ------------- */
 
-  const loadOffices = async () => {
+  const loadOffices = async (): Promise<OfficeRow[]> => {
     if (!API_URL) {
       setPageError("ENV NEXT_PUBLIC_API_URL is not set");
-      return;
+      return [];
     }
     try {
       setLoading(true);
       setPageError("");
       const data = await fetchAllOffices();
-      // Map immediately; representative_name will be backfilled from repMap in an effect below if missing.
-      setOffices((Array.isArray(data) ? data : []).map(mapOfficeRow));
+      const rows = (Array.isArray(data) ? data : []).map((office) => {
+        const row = mapOfficeRow(office);
+        const repLabel =
+          row.representative_id
+            ? repMap[String(row.representative_id)] || row.representative_name
+            : row.representative_name;
+        return {
+          ...row,
+          representative_name: repLabel || "",
+        };
+      });
+      setOffices(rows);
+      return rows;
     } catch (err: any) {
       setPageError(err?.message || "Failed to load offices");
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
-  const loadRepresentatives = async () => {
+  const loadRepresentatives = async (officeRows: OfficeRow[] = offices) => {
     if (!API_URL) return;
     try {
       setRepsLoading(true);
       const users = await fetchAllUsers();
 
-      // Keep users NOT in "Citizen" group (for selecting representatives)
-      const kept = (users || []).filter((u) => {
-        const groups = (u.groups || [])
-          .map((g) => (typeof g === "string" ? g : g?.name))
-          .filter(Boolean) as string[];
-        return !groups.includes("Citizen");
-      });
+      const optionMap = new Map<string, { id: string | number; label: string }>();
 
-      const options = kept
-        .map((u) => {
-          const name =
+      (users || []).forEach((u) => {
+        const label =
             `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
             u.email ||
             u.username ||
             String(u.id);
-          return { id: u.id, label: name };
-        })
-        .sort((a, b) => a.label.localeCompare(b.label));
+        optionMap.set(String(u.id), { id: u.id, label });
+      });
 
-      // Build id -> name map for fast lookup
+      officeRows.forEach((o) => {
+        if (o.representative_id !== "") {
+          const key = String(o.representative_id);
+          if (!optionMap.has(key)) {
+            optionMap.set(key, {
+              id: o.representative_id,
+              label: o.representative_name || `User #${key}`,
+            });
+          }
+        }
+      });
+
+      const options = Array.from(optionMap.values()).sort((a, b) =>
+        a.label.localeCompare(b.label),
+      );
+
       const map: Record<string, string> = {};
       options.forEach((o) => (map[String(o.id)] = o.label));
 
@@ -225,8 +250,11 @@ export default function OfficesPage() {
   };
 
   useEffect(() => {
-    loadOffices();
-    loadRepresentatives();
+    const init = async () => {
+      const rows = await loadOffices();
+      await loadRepresentatives(rows);
+    };
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -237,8 +265,9 @@ export default function OfficesPage() {
       prev.map((o) => ({
         ...o,
         representative_name:
-          o.representative_name ||
-          (o.representative_id != null ? repMap[String(o.representative_id)] || "" : ""),
+          o.representative_id
+            ? repMap[String(o.representative_id)] || o.representative_name || ""
+            : o.representative_name,
       })),
     );
   }, [repMap]);
@@ -268,14 +297,18 @@ export default function OfficesPage() {
         email: createForm.email || undefined,
         address: createForm.address || undefined,
         office_representative:
-          createForm.representative_id === "" ? undefined : createForm.representative_id,
+          createForm.representative_id === ""
+            ? undefined
+            : isNaN(Number(createForm.representative_id))
+            ? createForm.representative_id
+            : Number(createForm.representative_id),
       };
 
       const res = await fetch(`${API_URL}/offices/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -285,7 +318,8 @@ export default function OfficesPage() {
         throw new Error(msg || `Create failed: ${res.status}`);
       }
 
-      await loadOffices();
+      const rows = await loadOffices();
+      await loadRepresentatives(rows);
       setOpenCreate(false);
       setCreateForm({
         name: "",
@@ -337,14 +371,18 @@ export default function OfficesPage() {
         email: editForm.email || "",
         address: editForm.address || "",
         office_representative:
-          editForm.representative_id === "" ? null : editForm.representative_id,
+          editForm.representative_id === ""
+            ? null
+            : isNaN(Number(editForm.representative_id))
+            ? editForm.representative_id
+            : Number(editForm.representative_id),
       };
 
       const res = await fetch(`${API_URL}/offices/${selected.id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -354,7 +392,8 @@ export default function OfficesPage() {
         throw new Error(msg || `Update failed: ${res.status}`);
       }
 
-      await loadOffices();
+      const rows = await loadOffices();
+      await loadRepresentatives(rows);
       setOpenDetails(false);
 
       setSuccessMsg("Office updated successfully.");
@@ -377,7 +416,7 @@ export default function OfficesPage() {
       setDeleting(true);
       const res = await fetch(`${API_URL}/offices/${selected.id}/`, {
         method: "DELETE",
-        headers: { ...authHeaders },
+        headers: authHeaders,
       });
 
       if (!res.ok && res.status !== 204) {
@@ -385,7 +424,8 @@ export default function OfficesPage() {
         throw new Error(msg || `Delete failed: ${res.status}`);
       }
 
-      await loadOffices();
+      const rows = await loadOffices();
+      await loadRepresentatives(rows);
       setOpenDetails(false);
 
       setSuccessMsg("Office deleted successfully.");
@@ -436,6 +476,7 @@ export default function OfficesPage() {
               <TableHead>Phone</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Address</TableHead>
+              <TableHead>Representative</TableHead>
               <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -476,6 +517,12 @@ export default function OfficesPage() {
                   <TableCell>{o.phone_number || "—"}</TableCell>
                   <TableCell>{o.email || "—"}</TableCell>
                   <TableCell className="truncate max-w-[260px]">{o.address || "—"}</TableCell>
+                  <TableCell>
+                    {o.representative_name ||
+                      (o.representative_id
+                        ? repMap[String(o.representative_id)] || "—"
+                        : "—")}
+                  </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
