@@ -46,12 +46,24 @@ jobs:
         run: |
           mkdir -p deploy-frontend
           # Copy necessary files for Next.js standalone output
-          cp -r frontend/.next/standalone/* deploy-frontend/ 2>/dev/null || cp -r frontend/.next deploy-frontend/
-          cp -r frontend/public deploy-frontend/ 2>/dev/null || true
-          cp -r frontend/.next/static deploy-frontend/.next/static 2>/dev/null || true
-          # Copy package.json for production dependencies if needed
-          cp frontend/package.json deploy-frontend/ 2>/dev/null || true
-          cp frontend/next.config.mjs deploy-frontend/ 2>/dev/null || true
+          if [ -d "frontend/.next/standalone" ]; then
+            # Standalone mode - copy standalone directory
+            cp -r frontend/.next/standalone/* deploy-frontend/
+            # Create .next directory for static files
+            mkdir -p deploy-frontend/.next
+            # Copy static files if they exist
+            if [ -d "frontend/.next/static" ]; then
+              cp -r frontend/.next/static deploy-frontend/.next/static
+            fi
+            # Copy public folder
+            cp -r frontend/public deploy-frontend/public 2>/dev/null || true
+          else
+            # Fallback: copy full .next directory
+            cp -r frontend/.next deploy-frontend/.next
+            cp -r frontend/public deploy-frontend/public 2>/dev/null || true
+            cp frontend/package.json deploy-frontend/
+            cp frontend/next.config.mjs deploy-frontend/
+          fi
           # Create .htaccess for Next.js routing
           cat > deploy-frontend/.htaccess << 'EOF'
           RewriteEngine On

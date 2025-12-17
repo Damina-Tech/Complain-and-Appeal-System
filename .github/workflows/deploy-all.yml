@@ -51,8 +51,12 @@ jobs:
           if [ -d "frontend/.next/standalone" ]; then
             # Standalone mode - copy standalone directory
             cp -r frontend/.next/standalone/* deploy-frontend/
-            # Copy static files
-            cp -r frontend/.next/static deploy-frontend/.next/static
+            # Create .next directory for static files
+            mkdir -p deploy-frontend/.next
+            # Copy static files if they exist
+            if [ -d "frontend/.next/static" ]; then
+              cp -r frontend/.next/static deploy-frontend/.next/static
+            fi
             # Copy public folder
             cp -r frontend/public deploy-frontend/public 2>/dev/null || true
           else
