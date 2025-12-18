@@ -109,12 +109,20 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - `package.json` (for dependencies)
    - `.htaccess` (for Apache fallback, though Node.js app takes precedence)
 
-3. **Restart Node.js App:**
+3. **After First Deployment - Install Dependencies:**
    - Go to cPanel → **Software** → **Setup Node.js App**
    - Find your `komi.ciroocity.com` application
-   - Click **Restart** to apply changes after deployment
+   - Click **Run NPM Install** (this installs production dependencies)
+   - Wait for it to complete (may take a few minutes)
 
-4. **Important Notes:**
+4. **Start/Restart Node.js App:**
+   - Go to cPanel → **Software** → **Setup Node.js App**
+   - Find your `komi.ciroocity.com` application
+   - Click **Start** (if stopped) or **Restart** (if running)
+   - Verify status shows "Running" (green indicator)
+   - Check logs if there are any errors (click **View Logs**)
+
+5. **Important Notes:**
    - The FTP user `komi@komi.ciroocity.com` logs directly into the `komi.ciroocity.com` directory
    - **Do NOT set `FRONTEND_DEPLOY_PATH` secret** - leave it empty so files deploy to the FTP root
    - If you see a directory listing instead of your app, check that:
@@ -270,6 +278,175 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
 3. **API Connection Errors:**
    - Verify `NEXT_PUBLIC_API_URL` points to `https://komi-api.ciroocity.com/api`
    - Check CORS settings in Django
+
+4. **503 Service Unavailable Error:**
+   This error means the Node.js app is not running or crashed.
+   
+   **Solution 1: Check Node.js App Status in cPanel**
+   - Go to cPanel → **Software** → **Setup Node.js App**
+   - Find your `komi.ciroocity.com` application
+   - Check if it shows as "Running" (green) or "Stopped" (red)
+   - If stopped, click **Start** or **Restart**
+   
+   **Solution 2: Verify Required Files Exist**
+   Check via SSH or File Manager that these files exist in `~/komi.ciroocity.com/`:
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   ls -la
+   ```
+   Required files:
+   - `server.js` (MUST exist - this is the entry point)
+   - `package.json` (needed for dependencies)
+   - `.next/` directory (with static files)
+   - `public/` directory (if you have public assets)
+   
+   **Solution 3: Add Required Environment Variables (CRITICAL)**
+   The app requires environment variables to run. In cPanel:
+   - Go to **Setup Node.js App** → Your app → **Environment variables** section
+   - Click **+ ADD VARIABLE**
+   - Add these required variables:
+     - **Name**: `NEXT_PUBLIC_API_URL`
+     - **Value**: `https://komi-api.ciroocity.com/api`
+     - Click **Add**
+   - After adding, click **SAVE** (top right)
+   - Then click **RESTART** to restart the app with new environment variables
+   
+   **Note:** If your app uses Keycloak, you may also need:
+   - `NEXT_PUBLIC_KEYCLOAK_URL` (if different from default)
+   - `NEXT_PUBLIC_KEYCLOAK_REALM` (if different from default)
+   - `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID` (if different from default)
+   
+   **Solution 4: Check Application Logs**
+   - In cPanel → **Setup Node.js App** → Click on your app
+   - Click **View Logs** or check **Error Logs**
+   - Look for error messages that indicate why the app crashed
+   - Common issues:
+     - Missing dependencies (run `npm install` via SSH)
+     - Port already in use
+     - Environment variables missing ← **Most common cause of 503 after npm install**
+     - Syntax errors in server.js
+     - Missing server.js file
+   
+   **Solution 5: Install Dependencies via SSH**
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   npm install --production
+   ```
+   Then restart the app in cPanel.
+   
+   **Solution 6: Verify server.js Content**
+   The `server.js` file should exist and be executable. Check:
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   cat server.js | head -20
+   ```
+   It should start with something like:
+   ```javascript
+   const { createServer } = require('http')
+   const { parse } = require('url')
+   const next = require('next')
+   ```
+   
+   **Solution 7: Check Port Configuration**
+   - In cPanel → **Setup Node.js App** → Your app
+   - Verify the port is set correctly (usually auto-assigned)
+   - Check that no other app is using the same port
+   
+   **Solution 8: Recreate Node.js App**
+   If nothing works:
+   1. Delete the existing Node.js app in cPanel
+   2. Wait a few minutes
+   3. Create a new Node.js app with:
+      - **Application root**: `komi.ciroocity.com`
+      - **Startup file**: `server.js`
+      - **Node.js version**: `22.18.0`
+   4. Redeploy via GitHub Actions
+   5. Click **Run NPM Install** in cPanel
+   6. Click **Start** to start the app
+
+4. **Node.js App Lock Error ("Can't acquire lock for app"):**
+   This error occurs when the Node.js app is stuck or has a lock file that wasn't cleaned up.
+   
+   **Solution 1: Wait and Retry (Easiest)**
+   - Wait 5-10 minutes for the lock to automatically expire
+   - Try restarting/stopping/deleting the app again
+   
+   **Solution 2: Kill Stuck Processes via SSH (Recommended)**
+   ```bash
+   # SSH into your cPanel server
+   ssh your-username@your-server.com
+   
+   # Find and kill Node.js processes for your app
+   ps aux | grep node | grep komi.ciroocity.com
+   # Note the PID (process ID) from the output
+   
+   # Kill the process (replace PID with actual process ID)
+   kill -9 PID
+   
+   # Or kill all Node.js processes for your app
+   pkill -f "komi.ciroocity.com"
+   
+   # Wait a few seconds, then try again in cPanel
+   ```
+   
+   **Solution 3: Remove Lock Files via SSH**
+   ```bash
+   # SSH into your cPanel server
+   ssh your-username@your-server.com
+   
+   # Navigate to Node.js app directory
+   cd ~/komi.ciroocity.com
+   
+   # Remove any lock files (if they exist)
+   rm -f .nodejs-lock
+   rm -f *.lock
+   rm -f .lock
+   
+   # Also check in the parent directory
+   cd ~
+   rm -f .nodejs-lock
+   
+   # Try again in cPanel
+   ```
+   
+   **Solution 4: Restart Node.js Service (If you have root access)**
+   ```bash
+   # This requires root/sudo access
+   systemctl restart nodejs
+   # Or
+   service nodejs restart
+   ```
+   
+   **Solution 5: Delete App via SSH (Last Resort)**
+   ```bash
+   # SSH into your cPanel server
+   ssh your-username@your-server.com
+   
+   # Find the app configuration file
+   # Usually in: ~/.nodejs/ or /home/username/.nodejs/
+   ls -la ~/.nodejs/
+   
+   # Remove the app configuration (replace with actual app name)
+   rm -rf ~/.nodejs/komi.ciroocity.com
+   
+   # Or remove all Node.js app configs (be careful!)
+   # rm -rf ~/.nodejs/*
+   
+   # Then recreate the app in cPanel
+   ```
+   
+   **Solution 6: Contact Hosting Support**
+   - If none of the above work, contact your hosting provider
+   - They can remove the lock from their end
+   - Provide them with the exact error message
+   
+   **Prevention Tips:**
+   - Always wait for operations to complete before starting new ones
+   - Don't refresh the page while operations are running
+   - Avoid multiple simultaneous operations on the same app
 
 ### API Issues
 

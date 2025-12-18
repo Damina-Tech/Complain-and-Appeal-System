@@ -49,7 +49,7 @@ jobs:
           mkdir -p deploy-frontend
           # Copy standalone build output
           if [ -d "frontend/.next/standalone" ]; then
-            # Standalone mode - copy standalone directory
+            # Standalone mode - copy standalone directory contents
             cp -r frontend/.next/standalone/* deploy-frontend/
             # Create .next directory for static files
             mkdir -p deploy-frontend/.next
@@ -59,6 +59,14 @@ jobs:
             fi
             # Copy public folder
             cp -r frontend/public deploy-frontend/public 2>/dev/null || true
+            # Ensure server.js exists in root (for cPanel Node.js app)
+            if [ ! -f "deploy-frontend/server.js" ] && [ -f "frontend/.next/standalone/server.js" ]; then
+              cp frontend/.next/standalone/server.js deploy-frontend/server.js
+            fi
+            # Copy package.json if it doesn't exist (needed for cPanel)
+            if [ ! -f "deploy-frontend/package.json" ]; then
+              cp frontend/package.json deploy-frontend/package.json
+            fi
           else
             # Fallback: copy full .next directory
             cp -r frontend/.next deploy-frontend/.next
@@ -66,7 +74,7 @@ jobs:
             cp frontend/package.json deploy-frontend/
             cp frontend/next.config.mjs deploy-frontend/
           fi
-          # Create .htaccess for Next.js routing (if using Apache)
+          # Create .htaccess for Next.js routing (fallback if Node.js app fails)
           cat > deploy-frontend/.htaccess << 'EOF'
           RewriteEngine On
           RewriteBase /
@@ -75,6 +83,14 @@ jobs:
           RewriteCond %{REQUEST_FILENAME} !-d
           RewriteRule . /index.html [L]
           EOF
+          # List files for debugging
+          echo "Deployment files prepared:"
+          ls -la deploy-frontend/ | head -20
+          if [ -f "deploy-frontend/server.js" ]; then
+            echo "✓ server.js found"
+          else
+            echo "✗ server.js NOT found - this may cause 503 errors"
+          fi
 
       - name: Set frontend server directory path
         id: set-frontend-server-dir

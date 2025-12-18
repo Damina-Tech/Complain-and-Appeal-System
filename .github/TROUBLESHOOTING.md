@@ -116,6 +116,30 @@ To test if workflows work:
 - **Solution**: Verify deployment paths match your cPanel directory structure
 - Check `FRONTEND_DEPLOY_PATH` and `API_DEPLOY_PATH` secrets
 
+## cPanel Node.js App Lock Issues
+
+### Error: "Can't acquire lock for app: komi.ciroocity.com"
+
+This is a common cPanel issue when the Node.js app is stuck or has a lock file.
+
+**Quick Solutions:**
+
+1. **Wait 5-10 minutes** - Locks usually expire automatically
+2. **Kill stuck processes via SSH:**
+   ```bash
+   ssh your-username@your-server.com
+   pkill -f "komi.ciroocity.com"
+   ```
+3. **Remove lock files via SSH:**
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   rm -f .nodejs-lock *.lock .lock
+   ```
+4. **Contact hosting support** if the above don't work
+
+See `.github/DEPLOYMENT.md` for detailed troubleshooting steps.
+
 ## Next Steps
 
 After workflows are working:
