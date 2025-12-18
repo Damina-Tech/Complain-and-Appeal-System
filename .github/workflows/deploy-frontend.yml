@@ -54,11 +54,20 @@ jobs:
               echo "Copying node_modules from standalone to root..."
               cp -r frontend/.next/standalone/node_modules deploy-frontend/node_modules
             fi
-            # Create .next directory for static files
-            mkdir -p deploy-frontend/.next
-            # Copy static files if they exist
+            # CRITICAL: Copy .next directory from standalone (contains BUILD_ID and other required files)
+            if [ -d "frontend/.next/standalone/.next" ]; then
+              echo "Copying .next directory from standalone..."
+              cp -r frontend/.next/standalone/.next deploy-frontend/.next
+            fi
+            # Also copy static files to .next/static if they exist
             if [ -d "frontend/.next/static" ]; then
-              cp -r frontend/.next/static deploy-frontend/.next/static
+              mkdir -p deploy-frontend/.next/static
+              cp -r frontend/.next/static/* deploy-frontend/.next/static/
+            fi
+            # Copy BUILD_ID if it exists (required for production builds)
+            if [ -f "frontend/.next/BUILD_ID" ]; then
+              mkdir -p deploy-frontend/.next
+              cp frontend/.next/BUILD_ID deploy-frontend/.next/BUILD_ID
             fi
             # Copy public folder
             cp -r frontend/public deploy-frontend/public 2>/dev/null || true

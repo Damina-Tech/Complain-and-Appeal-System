@@ -317,7 +317,43 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - `NEXT_PUBLIC_KEYCLOAK_REALM` (if different from default)
    - `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID` (if different from default)
    
-   **Solution 4: Fix "Cannot find module 'next'" Error (CRITICAL)**
+   **Solution 4: Fix "Could not find a production build" Error (CRITICAL)**
+   This error occurs when the `.next` directory is missing required files like `BUILD_ID`.
+   
+   **Check the error log:**
+   - Look for `stderr.log` file in `~/komi.ciroocity.com/` directory
+   - Error message: `Could not find a production build in the './.next' directory`
+   
+   **Fix via SSH:**
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   
+   # Check if .next directory exists
+   ls -la .next/
+   
+   # Check if BUILD_ID exists
+   ls -la .next/BUILD_ID
+   
+   # If BUILD_ID is missing, copy from standalone (if it exists)
+   if [ -d ".next/standalone/.next" ]; then
+     echo "Copying .next directory from standalone..."
+     cp -r .next/standalone/.next .next
+   fi
+   
+   # If BUILD_ID still doesn't exist, copy from source build
+   # You may need to check the original build location
+   # Or redeploy via GitHub Actions (the updated workflow now handles this)
+   ```
+   
+   **Best Solution: Redeploy via GitHub Actions**
+   The updated deployment workflow now automatically copies the `.next` directory correctly.
+   - Go to GitHub → **Actions** → **Deploy Frontend to cPanel**
+   - Click **Run workflow** → **Run workflow**
+   - Wait for deployment to complete
+   - Then restart the app in cPanel
+   
+   **Solution 5: Fix "Cannot find module 'next'" Error (CRITICAL)**
    This is the most common cause of 503 errors after deployment. The error occurs because `node_modules` from the standalone build aren't in the root directory.
    
    **Check the error log:**
@@ -355,7 +391,7 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    
    **Note:** The updated deployment workflow now automatically copies `node_modules` to the root, so redeploying via GitHub Actions should fix this permanently.
    
-   **Solution 5: Check Application Logs**
+   **Solution 6: Check Application Logs**
    - In cPanel → **Metrics** → **Errors** (check recent errors)
    - Or check `stderr.log` file in `~/komi.ciroocity.com/` directory via File Manager or SSH
    - Look for error messages that indicate why the app crashed
@@ -367,7 +403,7 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
      - Syntax errors in server.js
      - Missing server.js file
    
-   **Solution 6: Install Dependencies via SSH**
+   **Solution 7: Install Dependencies via SSH**
    ```bash
    ssh your-username@your-server.com
    cd ~/komi.ciroocity.com
@@ -375,7 +411,7 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    ```
    Then restart the app in cPanel.
    
-   **Solution 7: Verify server.js Content**
+   **Solution 8: Verify server.js Content**
    The `server.js` file should exist and be executable. Check:
    ```bash
    ssh your-username@your-server.com
@@ -389,12 +425,12 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    const next = require('next')
    ```
    
-   **Solution 8: Check Port Configuration**
+   **Solution 9: Check Port Configuration**
    - In cPanel → **Setup Node.js App** → Your app
    - Verify the port is set correctly (usually auto-assigned)
    - Check that no other app is using the same port
    
-   **Solution 9: Recreate Node.js App**
+   **Solution 10: Recreate Node.js App**
    If nothing works:
    1. Delete the existing Node.js app in cPanel
    2. Wait a few minutes
