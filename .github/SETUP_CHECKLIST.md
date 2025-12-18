@@ -40,7 +40,9 @@ Add these secrets:
 - [ ] Create application for `komi-api.ciroocity.com`
 - [ ] Set Python version to `3.10`
 - [ ] Set startup file to `passenger_wsgi.py`
-- [ ] Create virtual environment: `python3.10 -m venv venv`
+- [ ] Create virtual environment:
+  - If `python3.10 -m venv venv` fails, use: `python3.10 -m venv --without-pip venv` then install pip manually
+  - Or use: `python3.10 -m virtualenv venv` (install virtualenv first if needed)
 - [ ] Create `.env` file with required variables
 
 ## ✅ Step 4: First Manual Setup (One Time)

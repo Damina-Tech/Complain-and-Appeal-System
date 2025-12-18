@@ -77,10 +77,17 @@ jobs:
       - name: Set server directory path
         id: set-server-dir
         run: |
-          DEPLOY_PATH="${{ secrets.FRONTEND_DEPLOY_PATH || 'komi.ciroocity.com' }}"
-          # Ensure path ends with /
-          if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
-            DEPLOY_PATH="${DEPLOY_PATH}/"
+          # If FRONTEND_DEPLOY_PATH is set, use it; otherwise deploy to FTP root (empty)
+          # The FTP user komi@komi.ciroocity.com already logs into komi.ciroocity.com directory
+          DEPLOY_PATH="${{ secrets.FRONTEND_DEPLOY_PATH }}"
+          if [ -z "$DEPLOY_PATH" ]; then
+            # Empty means deploy directly to FTP root (where FTP user logs in)
+            DEPLOY_PATH=""
+          else
+            # If path is provided, ensure it ends with /
+            if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
+              DEPLOY_PATH="${DEPLOY_PATH}/"
+            fi
           fi
           echo "server-dir=${DEPLOY_PATH}" >> $GITHUB_OUTPUT
 

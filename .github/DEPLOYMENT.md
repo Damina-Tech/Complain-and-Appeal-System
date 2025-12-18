@@ -41,8 +41,8 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
 | `FTP_SERVER` | Your cPanel FTP server (fallback if separate servers not set) | `ftp.ciroocity.com` |
 | `FRONTEND_FTP_SERVER` | Frontend FTP server (if different from default) | Uses `FTP_SERVER` if not set |
 | `API_FTP_SERVER` | API FTP server (if different from default) | Uses `FTP_SERVER` if not set |
-| `FRONTEND_DEPLOY_PATH` | Frontend deployment path on cPanel | `komi.ciroocity.com` |
-| `API_DEPLOY_PATH` | API deployment path on cPanel | `komi-api.ciroocity.com` |
+| `FRONTEND_DEPLOY_PATH` | Frontend deployment path on cPanel (leave empty/unset to deploy to FTP root) | Empty (deploys to FTP root where user logs in) |
+| `API_DEPLOY_PATH` | API deployment path on cPanel (leave empty/unset to deploy to FTP root) | Empty (deploys to FTP root where user logs in) |
 | `DJANGO_SECRET_KEY` | Django secret key (for collectstatic) | - |
 | `SSH_HOST` | SSH host for running migrations | - |
 | `SSH_USERNAME` | SSH username | - |
@@ -101,11 +101,26 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - **Application mode**: Production
    - Click **Create**
 
-2. **Install Dependencies (First Time Only):**
-   ```bash
-   cd ~/komi.ciroocity.com
-   npm install
-   ```
+2. **Verify Deployment Structure:**
+   After deployment, your `komi.ciroocity.com` directory should contain:
+   - `server.js` (Next.js standalone server)
+   - `.next/` directory with static files
+   - `public/` directory (if you have public assets)
+   - `package.json` (for dependencies)
+   - `.htaccess` (for Apache fallback, though Node.js app takes precedence)
+
+3. **Restart Node.js App:**
+   - Go to cPanel → **Software** → **Setup Node.js App**
+   - Find your `komi.ciroocity.com` application
+   - Click **Restart** to apply changes after deployment
+
+4. **Important Notes:**
+   - The FTP user `komi@komi.ciroocity.com` logs directly into the `komi.ciroocity.com` directory
+   - **Do NOT set `FRONTEND_DEPLOY_PATH` secret** - leave it empty so files deploy to the FTP root
+   - If you see a directory listing instead of your app, check that:
+     - Node.js app is running in cPanel
+     - `server.js` exists in the root directory
+     - Node.js app startup file is set to `server.js`
 
 ### API Setup (Python)
 
@@ -120,13 +135,55 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - Click **Create**
 
 2. **Create Virtual Environment (First Time Only):**
+   
+   **IMPORTANT: Verify Python Version First:**
+   ```bash
+   python3.10 --version  # Should show Python 3.10.x or higher
+   which python3.10      # Verify the path
+   ```
+   
+   **Option 1: Using venv without pip (Recommended if ensurepip fails):**
    ```bash
    cd ~/komi-api.ciroocity.com
    python3.10 -m venv venv
    source venv/bin/activate
+   # Verify Python version in venv
+   python --version  # Should show Python 3.10.x
+   # Install pip manually if needed
+   curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+   python get-pip.py
+   rm get-pip.py
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
+   
+   **Option 2: Using venv normally (if ensurepip works):**
+   ```bash
+   cd ~/komi-api.ciroocity.com
+   python3.10 -m venv venv
+   source venv/bin/activate
+   # Verify Python version in venv
+   python --version  # Should show Python 3.10.x
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+   
+   **Option 3: Using virtualenv (if venv fails):**
+   ```bash
+   cd ~/komi-api.ciroocity.com
+   pip3 install --user virtualenv
+   python3.10 -m virtualenv venv
+   source venv/bin/activate
+   # Verify Python version in venv
+   python --version  # Should show Python 3.10.x
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+   
+   **Note:** 
+   - If you get an error about `ensurepip`, use Option 1 or Option 3.
+   - If you get "Django 5.x requires Python 3.10+" error, verify you're using Python 3.10 in the venv.
+   - If Python 3.10 is not available, see "Python Version Issues" in Troubleshooting section.
 
 3. **Create Environment File:**
    Create `.env` file in `~/komi-api.ciroocity.com/`:
@@ -227,12 +284,74 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - Verify `STATIC_ROOT` and `STATIC_URL` in Django settings
    - Check file permissions in cPanel
 
-3. **Database Errors:**
+3. **Virtual Environment Creation Errors:**
+   - If `python3.10 -m venv venv` fails with `ensurepip` error:
+     ```bash
+     # Use --without-pip flag
+     python3.10 -m venv --without-pip venv
+     source venv/bin/activate
+     # Install pip manually
+     curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+     python get-pip.py
+     rm get-pip.py
+     ```
+   - Or use virtualenv instead:
+     ```bash
+     pip3 install --user virtualenv
+     python3.10 -m virtualenv venv
+     ```
+
+4. **Python Version Issues (Django 5.x requires Python 3.10+):**
+   - **Error:** `ERROR: Could not find a version that satisfies the requirement Django==5.2.5`
+   - **Cause:** Django 5.x requires Python 3.10+, but the server is using an older Python version
+   - **Solution 1: Verify Python version in venv:**
+     ```bash
+     source venv/bin/activate
+     python --version  # Should show Python 3.10.x or higher
+     which python      # Check the Python path
+     ```
+   - **Solution 2: Recreate venv with correct Python version:**
+     ```bash
+     # Remove old venv
+     rm -rf venv
+     # Find Python 3.10 path
+     which python3.10
+     # Or check cPanel Python App for the correct path
+     # Create venv with explicit Python path
+     /usr/bin/python3.10 -m venv venv  # Use actual path from which command
+     source venv/bin/activate
+     python --version  # Verify it's 3.10+
+     pip install --upgrade pip
+     pip install -r requirements.txt
+     ```
+   - **Solution 3: Use cPanel Python App (Recommended):**
+     - Go to cPanel → **Software** → **Setup Python App**
+     - Create/Edit the application
+     - Ensure Python version is set to **3.10** or higher
+     - cPanel will automatically set up the correct Python path
+     - Then activate venv and install:
+       ```bash
+       source venv/bin/activate
+       python --version  # Should show 3.10+
+       pip install -r requirements.txt
+       ```
+   - **Solution 4: If Python 3.10+ is not available:**
+     - Contact your hosting provider to enable Python 3.10+
+     - Or temporarily downgrade Django (requires code changes):
+       Update `requirements.txt` to use Django 4.2.x:
+       ```txt
+       Django==4.2.16
+       django-filter==23.5
+       djangorestframework==3.14.0
+       djangorestframework-simplejwt==5.3.1
+       ```
+
+5. **Database Errors:**
    - Ensure database is created in cPanel → **MySQL Databases**
    - Run migrations: `python manage.py migrate`
    - Check database credentials in `.env`
 
-4. **CORS Errors:**
+5. **CORS Errors:**
    - Verify `CORS_ALLOWED_ORIGINS` includes `https://komi.ciroocity.com`
    - Check Django CORS settings
 
