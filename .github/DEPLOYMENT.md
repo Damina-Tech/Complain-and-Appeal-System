@@ -220,7 +220,7 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - Triggers when files in `frontend/` directory change
    - Deploys to `komi.ciroocity.com`
 
-2. **`deploy-api.yml`** - Deploys API only
+2. **`deploy-api.yml`** - Deploys API only`
    - Triggers when files in `api/` directory change
    - Deploys to `komi-api.ciroocity.com`
 
@@ -317,18 +317,35 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    - `NEXT_PUBLIC_KEYCLOAK_REALM` (if different from default)
    - `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID` (if different from default)
    
-   **Solution 4: Check Application Logs**
-   - In cPanel → **Setup Node.js App** → Click on your app
-   - Click **View Logs** or check **Error Logs**
-   - Look for error messages that indicate why the app crashed
-   - Common issues:
-     - Missing dependencies (run `npm install` via SSH)
-     - Port already in use
-     - Environment variables missing ← **Most common cause of 503 after npm install**
-     - Syntax errors in server.js
-     - Missing server.js file
+   **Solution 4: Fix "Cannot find module 'next'" Error (CRITICAL)**
+   This is the most common cause of 503 errors after deployment. The error occurs because `node_modules` from the standalone build aren't in the root directory.
    
-   **Solution 5: Install Dependencies via SSH**
+   **Check the error log:**
+   - Look for `stderr.log` file in `~/komi.ciroocity.com/` directory
+   - Or check cPanel → **Metrics** → **Errors** for recent errors
+   - Error message: `Error: Cannot find module 'next'`
+   
+   **Fix via SSH (Recommended):**
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   
+   # Check if node_modules exists in root
+   ls -la node_modules/ | head -5
+   
+   # If node_modules doesn't exist or is empty, copy from standalone
+   if [ -d ".next/standalone/node_modules" ]; then
+     echo "Copying node_modules from standalone to root..."
+     cp -r .next/standalone/node_modules ./node_modules
+   fi
+   
+   # Verify next module exists
+   ls -la node_modules/next/ | head -5
+   
+   # Restart the app in cPanel after this
+   ```
+   
+   **Alternative Fix - Reinstall Dependencies:**
    ```bash
    ssh your-username@your-server.com
    cd ~/komi.ciroocity.com
@@ -336,7 +353,29 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    ```
    Then restart the app in cPanel.
    
-   **Solution 6: Verify server.js Content**
+   **Note:** The updated deployment workflow now automatically copies `node_modules` to the root, so redeploying via GitHub Actions should fix this permanently.
+   
+   **Solution 5: Check Application Logs**
+   - In cPanel → **Metrics** → **Errors** (check recent errors)
+   - Or check `stderr.log` file in `~/komi.ciroocity.com/` directory via File Manager or SSH
+   - Look for error messages that indicate why the app crashed
+   - Common issues:
+     - "Cannot find module 'next'" → See Solution 4 above
+     - Missing dependencies (run `npm install` via SSH)
+     - Port already in use
+     - Environment variables missing
+     - Syntax errors in server.js
+     - Missing server.js file
+   
+   **Solution 6: Install Dependencies via SSH**
+   ```bash
+   ssh your-username@your-server.com
+   cd ~/komi.ciroocity.com
+   npm install --production
+   ```
+   Then restart the app in cPanel.
+   
+   **Solution 7: Verify server.js Content**
    The `server.js` file should exist and be executable. Check:
    ```bash
    ssh your-username@your-server.com
@@ -350,12 +389,12 @@ Go to your GitHub repository → **Settings** → **Secrets and variables** → 
    const next = require('next')
    ```
    
-   **Solution 7: Check Port Configuration**
+   **Solution 8: Check Port Configuration**
    - In cPanel → **Setup Node.js App** → Your app
    - Verify the port is set correctly (usually auto-assigned)
    - Check that no other app is using the same port
    
-   **Solution 8: Recreate Node.js App**
+   **Solution 9: Recreate Node.js App**
    If nothing works:
    1. Delete the existing Node.js app in cPanel
    2. Wait a few minutes

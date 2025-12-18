@@ -49,6 +49,11 @@ jobs:
           if [ -d "frontend/.next/standalone" ]; then
             # Standalone mode - copy standalone directory contents
             cp -r frontend/.next/standalone/* deploy-frontend/
+            # CRITICAL: Copy node_modules from standalone to root (for cPanel)
+            if [ -d "frontend/.next/standalone/node_modules" ]; then
+              echo "Copying node_modules from standalone to root..."
+              cp -r frontend/.next/standalone/node_modules deploy-frontend/node_modules
+            fi
             # Create .next directory for static files
             mkdir -p deploy-frontend/.next
             # Copy static files if they exist
@@ -88,6 +93,12 @@ jobs:
             echo "✓ server.js found"
           else
             echo "✗ server.js NOT found - this may cause 503 errors"
+          fi
+          if [ -d "deploy-frontend/node_modules" ]; then
+            echo "✓ node_modules found in root"
+            ls deploy-frontend/node_modules | head -10
+          else
+            echo "✗ node_modules NOT found in root - this will cause MODULE_NOT_FOUND errors"
           fi
 
       - name: Set server directory path
