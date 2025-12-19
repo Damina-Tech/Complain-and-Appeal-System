@@ -8,9 +8,21 @@ import { MenuIcon } from "./icons";
 import { Notification } from "./notification";
 import { ThemeToggleSwitch } from "./theme-toggle";
 import { UserInfo } from "./user-info";
+import { LanguageSelector } from "@/components/LanguageSelector";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export function Header() {
   const { toggleSidebar, isMobile } = useSidebarContext();
+  const { user, loading } = useCurrentUser();
+
+  // Get user's first name for welcome message
+  const getUserFirstName = () => {
+    if (!user?.name) return "User";
+    const firstName = user.name.split(" ")[0];
+    return firstName || "User";
+  };
+
+  const welcomeName = loading ? "..." : getUserFirstName();
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stroke bg-white px-4 py-5 shadow-1 dark:border-stroke-dark dark:bg-gray-dark md:px-5 2xl:px-10">
@@ -35,10 +47,12 @@ export function Header() {
       )}
 
       <div className="max-xl:hidden">
-        <h1 className="mb-0.5 text-heading-5 font-bold text-dark dark:text-white">
-          Dashboard
+        <h1 className="mb-0.5 text-heading-5 font-bold bg-gradient-to-r from-primary via-primary/90 to-primary/80 bg-clip-text text-transparent dark:from-primary dark:via-primary/90 dark:to-primary/80">
+          Welcome back, {welcomeName}! 👋
         </h1>
-        <p className="font-medium">Next.js Admin Dashboard Solution</p>
+        <p className="font-medium text-primary/70 dark:text-primary/60">
+          Chiro City Complaint & Appeal System
+        </p>
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-2 min-[375px]:gap-4">
@@ -51,6 +65,8 @@ export function Header() {
 
           <SearchIcon className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 max-[1015px]:size-5" />
         </div>
+
+        <LanguageSelector />
 
         <ThemeToggleSwitch />
 

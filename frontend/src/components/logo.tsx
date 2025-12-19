@@ -29,11 +29,11 @@ import Image from "next/image";
 export function Logo() {
   return (
     <div className="relative h-8 max-w-[12rem] flex items-center gap-2">
-      <div className="flex items-center gap-1.5">
-        <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary via-primary/90 to-primary/80 flex items-center justify-center shadow-lg ring-2 ring-primary/20">
           <span className="text-white font-bold text-sm">CAS</span>
         </div>
-        <span className="font-bold text-lg bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent dark:from-primary dark:to-primary/80">
+        <span className="font-bold text-xl bg-gradient-to-r from-primary via-primary/90 to-primary/80 bg-clip-text text-transparent dark:from-primary dark:via-primary/90 dark:to-primary/80">
           Chiro City CAS
         </span>
       </div>

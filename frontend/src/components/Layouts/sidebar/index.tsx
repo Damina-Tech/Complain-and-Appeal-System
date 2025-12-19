@@ -181,7 +181,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "max-w-[290px] overflow-hidden border-r border-gray-200 bg-white transition-[width] duration-200 ease-linear dark:border-gray-800 dark:bg-gray-dark",
+          "max-w-[290px] overflow-hidden border-r border-primary/20 bg-gradient-to-b from-primary/5 via-white to-white transition-[width] duration-200 ease-linear dark:border-primary/30 dark:from-primary/10 dark:via-gray-dark dark:to-gray-dark",
           isMobile ? "fixed bottom-0 top-0 z-50" : "sticky top-0 h-screen",
           isOpen ? "w-full" : "w-0",
         )}
@@ -220,7 +220,7 @@ export function Sidebar() {
             ) : (
               NAV_DATA.map((section) => (
                 <div key={section.label} className="mb-6">
-                  <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
+                  <h2 className="mb-5 text-sm font-semibold text-primary/80 dark:text-primary/70">
                     {section.label}
                   </h2>
 

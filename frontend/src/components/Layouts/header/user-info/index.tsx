@@ -128,6 +128,13 @@ export function UserInfo() {
                 await logoutUser();
               } finally {
                 localStorage.removeItem("token");
+                localStorage.removeItem("role");
+                localStorage.removeItem("user_id");
+                localStorage.removeItem("user_groups");
+                // Clear token cookie
+                document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                // Dispatch custom event to notify ConditionalLayout of logout
+                window.dispatchEvent(new Event("localStorageChange"));
                 router.replace("/auth/sign-in");
               }
             }}

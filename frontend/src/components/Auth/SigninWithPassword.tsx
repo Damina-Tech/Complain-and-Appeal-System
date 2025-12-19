@@ -4,7 +4,7 @@ import Link from "next/link";
 import React, { useState } from "react";
 import InputGroup from "../FormElements/InputGroup/index";
 import { Checkbox } from "../FormElements/checkbox";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { loginUser } from "@/utils/api";
 import { defaultRouteForRole } from "@/lib/role";
 import { Eye, EyeOff } from "lucide-react";
@@ -20,6 +20,7 @@ export default function SigninWithPassword() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setData({
@@ -35,18 +36,31 @@ export default function SigninWithPassword() {
 
     try {
       const response = await loginUser(data.email, data.password); // call Django API
-      localStorage.setItem("token", response.access); // save JWT
+      const token = response.access;
+      
+      // Save token to localStorage
+      localStorage.setItem("token", token);
+      
+      // Also set token in cookie so middleware can see it
+      const expires = new Date();
+      expires.setTime(expires.getTime() + (data.remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000)); // 30 days if remember, else 1 day
+      document.cookie = `token=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+      
+      // Dispatch custom event to notify ConditionalLayout of login
+      window.dispatchEvent(new Event("localStorageChange"));
+      
       if (response.role) {
         localStorage.setItem("role", response.role);
       }
       if (response.user_id) {
         localStorage.setItem("user_id", String(response.user_id));
       }
+      
       // Fetch user groups from /auth/me endpoint after login
-      if (response.access) {
+      if (token) {
         try {
           const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me/`, {
-            headers: { Authorization: `Bearer ${response.access}` },
+            headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
           });
           if (meRes.ok) {
@@ -63,9 +77,19 @@ export default function SigninWithPassword() {
           console.error("Failed to fetch user groups:", e);
         }
       }
+      
       setLoading(false);
-      const role = (response.role || "").toString();
-      router.push(defaultRouteForRole(role));
+      
+      // Check for redirect parameter first, then use role-based redirect
+      const redirectTo = searchParams.get("redirect");
+      if (redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("/auth")) {
+        // Use redirect parameter if it's a valid internal route
+        router.replace(redirectTo);
+      } else {
+        // Otherwise use role-based redirect
+        const role = (response.role || "").toString();
+        router.replace(defaultRouteForRole(role));
+      }
     } catch (err: any) {
       setLoading(false);
       setError("Invalid email or password");

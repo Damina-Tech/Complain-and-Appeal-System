@@ -23,7 +23,7 @@ export function useCurrentUser() {
       try {
         // Adjust this endpoint to your backend's "who am I" route
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/auth/me`,
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/me/`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

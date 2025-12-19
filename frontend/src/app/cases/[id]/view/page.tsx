@@ -341,14 +341,14 @@ export default function CaseViewPage() {
         setMembers(assignableUsers);
       } else {
         // Fallback to old method if endpoint doesn't exist yet
-        const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
-        const filtered = (list || []).filter((u) => {
-          const groups = (u?.groups || [])
-            .map((g) => (typeof g === "string" ? g : g?.name))
-            .filter(Boolean) as string[];
-          return !groups.includes("Citizen");
-        });
-        setMembers(filtered);
+      const list = await fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers);
+      const filtered = (list || []).filter((u) => {
+        const groups = (u?.groups || [])
+          .map((g) => (typeof g === "string" ? g : g?.name))
+          .filter(Boolean) as string[];
+        return !groups.includes("Citizen");
+      });
+      setMembers(filtered);
       }
     } catch {
       setMembers([]);

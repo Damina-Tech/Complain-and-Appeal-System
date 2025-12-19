@@ -12,9 +12,8 @@ type Language = {
 };
 
 const languages: Language[] = [
-  { code: "en", name: "English", nativeName: "English" },
+  { code: "en", name: "English", nativeName: "h" },
   { code: "am", name: "Amharic", nativeName: "አማርኛ" },
-  { code: "ha", name: "Harari", nativeName: "ሐረሪ" },
   { code: "om", name: "Oromo", nativeName: "Afaan Oromoo" },
 ];
 
@@ -44,7 +43,7 @@ export function LanguageSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+        className="flex items-center gap-2 rounded-lg border border-stroke bg-white px-3 py-2 text-sm font-medium text-dark-4 transition-colors hover:bg-primary/10 hover:border-primary hover:text-primary dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-6 dark:hover:bg-primary/20 dark:hover:border-primary dark:hover:text-primary"
       >
         <Globe className="h-4 w-4" />
         <span className="hidden sm:inline">{selectedLanguage.name}</span>
@@ -53,14 +52,14 @@ export function LanguageSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[160px] rounded-lg border border-stroke bg-white py-1 shadow-lg dark:border-stroke-dark dark:bg-gray-dark">
           {languages.map((language) => (
             <button
               key={language.code}
               onClick={() => handleLanguageChange(language)}
               className={cn(
-                "flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700",
-                selectedLanguage.code === language.code && "bg-gray-50 dark:bg-gray-700"
+                "flex w-full items-center justify-between px-3 py-2 text-sm transition-colors hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/20 dark:hover:text-primary",
+                selectedLanguage.code === language.code && "bg-primary/15 text-primary dark:bg-primary/20 dark:text-primary"
               )}
             >
               <div className="flex flex-col items-start">

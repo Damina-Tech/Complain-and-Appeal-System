@@ -2,12 +2,23 @@ import Signin from "@/components/Auth/Signin";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 export const metadata: Metadata = {
   title: "Sign in",
 };
 
-export default function SignIn() {
+export default async function SignIn() {
+  // Check if user is already logged in (server-side check)
+  const cookieStore = await cookies();
+  const token = cookieStore.get("token")?.value;
+  
+  // If token exists, redirect to dashboard
+  if (token) {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="rounded-[10px] bg-white shadow-1 dark:bg-gray-dark dark:shadow-card">
       <div className="grid grid-cols-1 xl:grid-cols-2">
