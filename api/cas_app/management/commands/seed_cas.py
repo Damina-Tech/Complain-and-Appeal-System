@@ -15,12 +15,13 @@ from cas_app.models import (
 
 User = get_user_model()
 
-# Main roles for the system
+# Main roles for the system - Only these 5 roles are allowed
 ROLES = [
     "Citizen",
     "Focal Person",
     "Director",
     "Mayor Office",
+    "Admin",
 ]
 
 
@@ -61,7 +62,7 @@ FOCAL_CORE_PERMISSIONS = _unique_permissions(
     ]
 )
 
-PRESIDENT_OFFICE_PERMISSIONS = _unique_permissions(
+MAYOR_OFFICE_PERMISSIONS = _unique_permissions(
     CITIZEN_PERMISSIONS
     + [
         "change_case",
@@ -90,13 +91,8 @@ DIRECTOR_PERMISSIONS = _unique_permissions(
 ]
 )
 
-PRESIDENT_PERMISSIONS = _unique_permissions(
-    DIRECTOR_PERMISSIONS
-    + [
-        "add_group",
-        "delete_group",
-    ]
-)
+# Mayor Office permissions are already defined above
+# Note: Mayor Office does not have group management permissions
 
 # Admin gets ALL permissions - will be set dynamically in _assign_role_permissions
 ADMIN_PERMISSIONS = []  # Placeholder, will be populated with all permissions
@@ -105,7 +101,7 @@ ROLE_PERMISSION_MATRIX = {
     "Citizen": CITIZEN_PERMISSIONS,
     "Focal Person": FOCAL_CORE_PERMISSIONS,
     "Director": DIRECTOR_PERMISSIONS,
-    "Mayor Office": PRESIDENT_OFFICE_PERMISSIONS,
+    "Mayor Office": MAYOR_OFFICE_PERMISSIONS,
     "Admin": ADMIN_PERMISSIONS,  # Will be set to all permissions dynamically
 }
 
@@ -116,31 +112,42 @@ def uniq(n: int) -> str:
     return f"{n:03d}"
 
 class Command(BaseCommand):
-    help = "Seed CAS demo data: groups, users, offices, cases, history, feedback, transfers, assignments."
-
-    def add_arguments(self, parser):
-        parser.add_argument(
-            "--fresh",
-            action="store_true",
-            help="Delete existing seeded data before seeding again.",
-        )
+    help = "Seed CAS demo data: groups, users, offices, cases, history, feedback, transfers, assignments. Always clears database before seeding."
 
     @transaction.atomic
     def handle(self, *args, **options):
-        fresh = options.get("fresh", False)
-
-        if fresh:
-            self.stdout.write(self.style.WARNING("Deleting existing seed data..."))
-            Assignment.objects.all().delete()
-            Transfer.objects.all().delete()
-            CaseFeedback.objects.all().delete()
-            CaseStatusHistory.objects.all().delete()
-            Case.objects.all().delete()
-            Office.objects.all().delete()
-            # Remove users that match our seed pattern (avoid deleting real users)
-            for u in User.objects.filter(email__endswith="@seed.local"):
-                u.delete()
-            # groups we recreate below (not deleting to avoid messing with real perms)
+        # Always clear database before seeding
+        self.stdout.write(self.style.WARNING("Clearing existing seed data..."))
+        
+        # Clear all related data
+        Assignment.objects.all().delete()
+        Transfer.objects.all().delete()
+        CaseFeedback.objects.all().delete()
+        CaseStatusHistory.objects.all().delete()
+        Case.objects.all().delete()
+        Office.objects.all().delete()
+        RoleHierarchy.objects.all().delete()
+        
+        # Remove users that match our seed pattern (avoid deleting real users)
+        for u in User.objects.filter(email__endswith="@seed.local"):
+            u.delete()
+        
+        # Remove admin user if it exists
+        try:
+            admin_user = User.objects.get(username="admin", email="admin@cas.local")
+            admin_user.delete()
+        except User.DoesNotExist:
+            pass
+        
+        # Delete all groups that are NOT in our allowed roles list
+        allowed_role_names = set(ROLES)
+        all_groups = Group.objects.all()
+        for group in all_groups:
+            if group.name not in allowed_role_names:
+                self.stdout.write(self.style.WARNING(f"Deleting unauthorized group: {group.name}"))
+                group.delete()
+        
+        self.stdout.write(self.style.SUCCESS("Database cleared successfully."))
 
         self._ensure_groups()
         self._ensure_role_hierarchy()
@@ -330,15 +337,18 @@ class Command(BaseCommand):
 
     def _seed_users_per_group(self):
         """
-        Create 7 users per role (28 total for 4 roles), attach each to its Group.
+        Create 7 users per role (28 users for 4 roles: Citizen, Focal Person, Director, Mayor Office).
+        Admin user is created separately in _ensure_admin, so we skip Admin here.
         Citizen users will be used as 'citizens' for cases.
         Each user gets assigned to their role's group with appropriate permissions.
         """
         users_by_group = {}
         base_counter = 1
 
-        # Seed users for each role in ROLE_PERMISSION_MATRIX
+        # Seed users for each role in ROLE_PERMISSION_MATRIX (except Admin, which is created separately)
         for role in ROLE_PERMISSION_MATRIX.keys():
+            if role == "Admin":
+                continue  # Admin user is created separately in _ensure_admin
             try:
                 grp = Group.objects.get(name=role)
             except Group.DoesNotExist:
