@@ -4,44 +4,44 @@ import { OverviewCard } from "./card";
 import * as icons from "./icons";
 
 export async function OverviewCardsGroup() {
-  const { views, profit, products, users } = await getOverviewData();
+  const { totalCases, totalCaseOwners, totalSolvedCases, totalPendingCases } = await getOverviewData();
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4 2xl:gap-7.5">
       <OverviewCard
-        label="Total Complaints"
+        label="Total Cases"
         data={{
-          ...views,
-          value: compactFormat(views.value),
+          ...totalCases,
+          value: compactFormat(totalCases.value),
         }}
-        Icon={icons.Views}
+        Icon={icons.TotalCases}
       />
 
       <OverviewCard
-        label="Total Appeals"
+        label="Total Case Owners"
         data={{
-          ...profit,
-          value: compactFormat(profit.value),
+          ...totalCaseOwners,
+          value: compactFormat(totalCaseOwners.value),
         }}
-        Icon={icons.Profit}
+        Icon={icons.CaseOwners}
       />
 
       <OverviewCard
-        label="Solved Complaints and Appeals"
+        label="Total Solved Cases"
         data={{
-          ...products,
-          value: compactFormat(products.value),
+          ...totalSolvedCases,
+          value: compactFormat(totalSolvedCases.value),
         }}
-        Icon={icons.Product}
+        Icon={icons.SolvedCases}
       />
 
       <OverviewCard
-        label="Pending Complaints and Appeals"
+        label="Total Pending Cases"
         data={{
-          ...users,
-          value: compactFormat(users.value),
+          ...totalPendingCases,
+          value: compactFormat(totalPendingCases.value),
         }}
-        Icon={icons.Users}
+        Icon={icons.PendingCases}
       />
     </div>
   );

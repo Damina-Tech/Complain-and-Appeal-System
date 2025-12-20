@@ -1,49 +1,68 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import i18n from "i18next";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type Language = {
-  code: string;
+  code: "en" | "am" | "om";
   name: string;
   nativeName: string;
 };
 
 const languages: Language[] = [
-  { code: "en", name: "English", nativeName: "h" },
+  { code: "en", name: "English", nativeName: "English" },
   { code: "am", name: "Amharic", nativeName: "አማርኛ" },
   { code: "om", name: "Oromo", nativeName: "Afaan Oromoo" },
 ];
 
 export function LanguageSelector() {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState<Language>(languages[0]);
+  const { currentLanguage, changeLanguage } = useTranslation();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>(
+    languages.find((l) => l.code === currentLanguage) || languages[0]
+  );
 
+  // Sync with current language changes
   useEffect(() => {
-    // Load saved language preference from localStorage
-    const savedLanguage = localStorage.getItem("selectedLanguage");
-    if (savedLanguage) {
-      const lang = languages.find(l => l.code === savedLanguage);
-      if (lang) {
-        setSelectedLanguage(lang);
-      }
+    const lang = languages.find((l) => l.code === currentLanguage);
+    if (lang && lang.code !== selectedLanguage.code) {
+      setSelectedLanguage(lang);
     }
-  }, []);
+  }, [currentLanguage, selectedLanguage.code]);
 
-  const handleLanguageChange = (language: Language) => {
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const handleLanguageChange = async (language: Language) => {
     setSelectedLanguage(language);
-    localStorage.setItem("selectedLanguage", language.code);
+    changeLanguage(language.code);
     setIsOpen(false);
-    i18n.changeLanguage(language.code);
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 rounded-lg border border-stroke bg-white px-3 py-2 text-sm font-medium text-dark-4 transition-colors hover:bg-primary/10 hover:border-primary hover:text-primary dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-6 dark:hover:bg-primary/20 dark:hover:border-primary dark:hover:text-primary"
+        aria-label="Select language"
+        aria-expanded={isOpen}
       >
         <Globe className="h-4 w-4" />
         <span className="hidden sm:inline">{selectedLanguage.name}</span>

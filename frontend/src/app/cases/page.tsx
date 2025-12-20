@@ -100,6 +100,7 @@ export default function ComplaintAppealPage() {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [userFormError, setUserFormError] = useState("");
+  const [userFieldErrors, setUserFieldErrors] = useState<Record<string, string>>({});
   const [userForm, setUserForm] = useState<{
     first_name: string;
     last_name: string;
@@ -285,9 +286,9 @@ export default function ComplaintAppealPage() {
     // Store File objects directly instead of converting to base64
     // We'll send them as actual files in FormData
     const attachments: Attachment[] = selected.map((f) => ({
-      name: f.name,
-      type: f.type,
-      size: f.size,
+        name: f.name,
+        type: f.type,
+        size: f.size,
       data: "", // Will be empty, we'll use the File object directly
       file: f, // Store the File object
     }));
@@ -689,9 +690,9 @@ export default function ComplaintAppealPage() {
             <label className="mb-1 block text-sm font-medium">
               Title <span className="text-red-500">*</span>
             </label>
-            <Input
+          <Input
               placeholder="Enter case title"
-              value={form.title}
+            value={form.title}
               onChange={(e) => {
                 setForm((s) => ({ ...s, title: e.target.value }));
                 if (formErrors.title) setFormErrors((e) => ({ ...e, title: undefined }));
@@ -705,12 +706,12 @@ export default function ComplaintAppealPage() {
           </div>
 
           <div>
-            <TextAreaGroup
-              name="description"
-              label="Description"
-              rows={4}
-              placeholder="Describe the case"
-              value={form.description}
+          <TextAreaGroup
+            name="description"
+            label="Description"
+            rows={4}
+            placeholder="Describe the case"
+            value={form.description}
               onChange={(e) => {
                 setForm((s) => ({ ...s, description: e.target.value }));
                 if (formErrors.description) setFormErrors((e) => ({ ...e, description: undefined }));
@@ -726,26 +727,26 @@ export default function ComplaintAppealPage() {
             <label className="mb-1 block text-sm font-medium">
               Category <span className="text-red-500">*</span>
             </label>
-            <Select
-              value={form.category}
+          <Select
+            value={form.category}
               onValueChange={(val) => {
                 setForm((s) => ({ ...s, category: val }));
                 if (formErrors.category) setFormErrors((e) => ({ ...e, category: undefined }));
               }}
-            >
+          >
               <SelectTrigger className={formErrors.category ? "border-red-500" : ""}>
-                <SelectValue placeholder="Select Category" />
-              </SelectTrigger>
-              <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
-                <SelectItem value="land">Land</SelectItem>
-                <SelectItem value="education">Education</SelectItem>
-                <SelectItem value="infrastructure">Infrastructure</SelectItem>
-                <SelectItem value="healthcare">Healthcare</SelectItem>
-                <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
-                <SelectItem value="human right">Human Right</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+              <SelectValue placeholder="Select Category" />
+            </SelectTrigger>
+            <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
+              <SelectItem value="land">Land</SelectItem>
+              <SelectItem value="education">Education</SelectItem>
+              <SelectItem value="infrastructure">Infrastructure</SelectItem>
+              <SelectItem value="healthcare">Healthcare</SelectItem>
+              <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
+              <SelectItem value="human right">Human Right</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
             {formErrors.category && (
               <p className="mt-1 text-sm text-red-500">{formErrors.category}</p>
             )}
@@ -827,6 +828,7 @@ export default function ComplaintAppealPage() {
         onClose={() => {
           setUserModalOpen(false);
           setUserFormError("");
+          setUserFieldErrors({});
           setUserForm({
             first_name: "",
             last_name: "",
@@ -843,6 +845,28 @@ export default function ComplaintAppealPage() {
           onSubmit={async (e) => {
             e.preventDefault();
             setUserFormError("");
+            setUserFieldErrors({});
+
+            // Client-side validation
+            const errors: Record<string, string> = {};
+            
+            if (!userForm.first_name?.trim()) {
+              errors.first_name = "First name is required";
+            }
+            
+            if (!userForm.last_name?.trim()) {
+              errors.last_name = "Last name is required";
+            }
+            
+            if (!userForm.phone_number?.trim()) {
+              errors.phone_number = "Phone number is required";
+            }
+
+            if (Object.keys(errors).length > 0) {
+              setUserFieldErrors(errors);
+              setUserFormError("Please fill in all required fields");
+              return;
+            }
 
             if (!API_URL) {
               setUserFormError("NEXT_PUBLIC_API_URL is not set");
@@ -852,24 +876,26 @@ export default function ComplaintAppealPage() {
               setUserFormError("You are not authenticated. Please sign in.");
               return;
             }
-            if (!userForm.email) {
-              setUserFormError("Email is required.");
-              return;
-            }
 
             try {
               setCreatingUser(true);
 
               const payload: Record<string, any> = {
-                username: userForm.email,
-                email: userForm.email,
-                first_name: userForm.first_name || undefined,
-                last_name: userForm.last_name || undefined,
-                phone_number: userForm.phone_number || undefined,
-                national_id: userForm.national_id || undefined,
+                username: userForm.email || `${userForm.first_name.toLowerCase()}_${Date.now()}`,
+                first_name: userForm.first_name.trim(),
+                last_name: userForm.last_name.trim(),
+                phone_number: userForm.phone_number.trim(),
                 status: "active",
                 groups: ["Citizen"], // Default to Citizen role
               };
+
+              // Add optional fields only if they have values
+              if (userForm.email?.trim()) {
+                payload.email = userForm.email.trim();
+              }
+              if (userForm.national_id?.trim()) {
+                payload.national_id = userForm.national_id.trim();
+              }
 
               const res = await fetch(`${API_URL}/users/`, {
                 method: "POST",
@@ -881,8 +907,106 @@ export default function ComplaintAppealPage() {
               });
 
               if (!res.ok) {
-                const msg = await res.text();
-                throw new Error(msg || `Create failed: ${res.status}`);
+                let errorData: any = {};
+                const responseText = await res.text();
+                
+                try {
+                  errorData = JSON.parse(responseText);
+                } catch {
+                  errorData = { detail: responseText || res.statusText };
+                }
+
+                // Helper function to extract error message
+                const getErrorMessage = (fieldError: any): string => {
+                  if (Array.isArray(fieldError)) {
+                    return fieldError[0] || "Invalid value";
+                  }
+                  if (typeof fieldError === 'object' && fieldError !== null) {
+                    if (fieldError.non_field_errors) {
+                      return Array.isArray(fieldError.non_field_errors) ? fieldError.non_field_errors[0] : String(fieldError.non_field_errors);
+                    }
+                    if (fieldError.message) {
+                      return String(fieldError.message);
+                    }
+                    const keys = Object.keys(fieldError);
+                    if (keys.length > 0) {
+                      return String(fieldError[keys[0]]);
+                    }
+                    return "Invalid value";
+                  }
+                  return String(fieldError);
+                };
+
+                // Map API field names to form field names
+                const newFieldErrors: Record<string, string> = {};
+                
+                Object.keys(errorData).forEach((key) => {
+                  if (key === 'detail' || key === 'message' || key === 'error' || key === 'non_field_errors') {
+                    return;
+                  }
+                  
+                  let formFieldName = '';
+                  switch (key) {
+                    case 'email':
+                      formFieldName = 'email';
+                      break;
+                    case 'phone_number':
+                      formFieldName = 'phone_number';
+                      break;
+                    case 'national_id':
+                      formFieldName = 'national_id';
+                      break;
+                    case 'first_name':
+                      formFieldName = 'first_name';
+                      break;
+                    case 'last_name':
+                      formFieldName = 'last_name';
+                      break;
+                    case 'username':
+                      formFieldName = 'email'; // username errors affect email field
+                      break;
+                    default:
+                      formFieldName = key;
+                  }
+                  
+                  if (formFieldName && errorData[key]) {
+                    const errorMsg = getErrorMessage(errorData[key]);
+                    if (errorMsg && errorMsg !== 'Invalid value') {
+                      newFieldErrors[formFieldName] = errorMsg;
+                    }
+                  }
+                });
+
+                if (Object.keys(newFieldErrors).length > 0) {
+                  setUserFieldErrors(newFieldErrors);
+                }
+
+                // Get general error message
+                let errorMessage = "";
+                if (errorData.detail) {
+                  errorMessage = Array.isArray(errorData.detail) ? errorData.detail[0] : String(errorData.detail);
+                } else if (errorData.message) {
+                  errorMessage = Array.isArray(errorData.message) ? errorData.message[0] : String(errorData.message);
+                } else if (errorData.error) {
+                  errorMessage = Array.isArray(errorData.error) ? errorData.error[0] : String(errorData.error);
+                } else if (Object.keys(newFieldErrors).length > 0) {
+                  errorMessage = "Please fix the errors in the form fields";
+                } else {
+                  errorMessage = typeof errorData === 'string' ? errorData : JSON.stringify(errorData);
+                }
+
+                if (!errorMessage) {
+                  errorMessage = `Create failed (${res.status})`;
+                }
+
+                // Only show general error if there are no field-specific errors
+                if (Object.keys(newFieldErrors).length === 0) {
+                  setUserFormError(errorMessage);
+                } else {
+                  setUserFormError("Please fix the errors below");
+                }
+                
+                return;
               }
 
               const newUser = await res.json();
@@ -902,6 +1026,7 @@ export default function ComplaintAppealPage() {
                 phone_number: "",
                 national_id: "",
               });
+              setUserFieldErrors({});
 
               // Show success message
               setSuccessMsg("User created successfully and selected as 'Reported By'.");
@@ -914,53 +1039,129 @@ export default function ComplaintAppealPage() {
             }
           }}
         >
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              placeholder="First name"
-              value={userForm.first_name}
-              onChange={(e) =>
-                setUserForm((s) => ({ ...s, first_name: e.target.value }))
-              }
-            />
-            <Input
-              placeholder="Last name"
-              value={userForm.last_name}
-              onChange={(e) =>
-                setUserForm((s) => ({ ...s, last_name: e.target.value }))
-              }
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              placeholder="Email *"
-              type="email"
-              value={userForm.email}
-              onChange={(e) =>
-                setUserForm((s) => ({ ...s, email: e.target.value }))
-              }
-              required
-            />
-            <Input
-              placeholder="Phone number"
-              value={userForm.phone_number}
-              onChange={(e) =>
-                setUserForm((s) => ({ ...s, phone_number: e.target.value }))
-              }
-            />
-          </div>
-
-          <Input
-            placeholder="National ID"
-            value={userForm.national_id}
-            onChange={(e) =>
-              setUserForm((s) => ({ ...s, national_id: e.target.value }))
-            }
-          />
-
+          {/* General error message at top */}
           {userFormError && (
-            <div className="text-sm text-red-500">{userFormError}</div>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-red-600 dark:text-red-400">⚠</span>
+                <div>
+                  <p className="font-medium">Validation Error</p>
+                  <p className="mt-1">{userFormError}</p>
+                </div>
+              </div>
+            </div>
           )}
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <Input
+                placeholder="First name *"
+                value={userForm.first_name}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, first_name: e.target.value }));
+                  if (userFieldErrors.first_name) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.first_name;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={userFieldErrors.first_name ? "border-red-500" : ""}
+                required
+              />
+              {userFieldErrors.first_name && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.first_name}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                placeholder="Last name *"
+                value={userForm.last_name}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, last_name: e.target.value }));
+                  if (userFieldErrors.last_name) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.last_name;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={userFieldErrors.last_name ? "border-red-500" : ""}
+                required
+              />
+              {userFieldErrors.last_name && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.last_name}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <Input
+                placeholder="Email (optional)"
+                type="email"
+                value={userForm.email}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, email: e.target.value }));
+                  if (userFieldErrors.email) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.email;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={userFieldErrors.email ? "border-red-500" : ""}
+              />
+              {userFieldErrors.email && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.email}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                placeholder="Phone number *"
+                value={userForm.phone_number}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, phone_number: e.target.value }));
+                  if (userFieldErrors.phone_number) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.phone_number;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={userFieldErrors.phone_number ? "border-red-500" : ""}
+                required
+              />
+              {userFieldErrors.phone_number && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.phone_number}</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <Input
+              placeholder="National ID (optional)"
+              value={userForm.national_id}
+              onChange={(e) => {
+                setUserForm((s) => ({ ...s, national_id: e.target.value }));
+                if (userFieldErrors.national_id) {
+                  setUserFieldErrors((prev) => {
+                    const newErrors = { ...prev };
+                    delete newErrors.national_id;
+                    return newErrors;
+                  });
+                }
+              }}
+              className={userFieldErrors.national_id ? "border-red-500" : ""}
+            />
+            {userFieldErrors.national_id && (
+              <p className="mt-1 text-xs text-red-500">{userFieldErrors.national_id}</p>
+            )}
+          </div>
 
           <div className="flex gap-2">
             <Button
@@ -969,6 +1170,7 @@ export default function ComplaintAppealPage() {
               onClick={() => {
                 setUserModalOpen(false);
                 setUserFormError("");
+                setUserFieldErrors({});
                 setUserForm({
                   first_name: "",
                   last_name: "",

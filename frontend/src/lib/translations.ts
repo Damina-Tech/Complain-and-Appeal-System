@@ -1,3 +1,11 @@
+// DEPRECATED: This file is kept for backward compatibility only
+// DO NOT USE - Use the new translation system from @/lib/translations/index instead
+// New translations are in frontend/src/lib/translations/index.ts
+// Please use the new translation system with hooks/useTranslation.ts
+
+// Note: This file should not import from translations/index to avoid circular dependencies
+// This file exports an old translation system that is being phased out
+
 type Translations = {
   [key: string]: {
     en: string;
@@ -29,30 +37,6 @@ export const translations: Translations = {
   },
   
   // Navigation
-  "home": {
-    en: "Home",
-    am: "የመነሻ ገጽ",
-    ha: "የመነሻ ገጽ",
-    om: "Mana",
-  },
-  "about": {
-    en: "About",
-    am: "ስለ",
-    ha: "ስለ",
-    om: "Waa'ee",
-  },
-  "services": {
-    en: "Services",
-    am: "አገልግሎቶች",
-    ha: "አገልግሎቶች",
-    om: "Tajaajiloota",
-  },
-  "contact": {
-    en: "Contact",
-    am: "አድራሻ",
-    ha: "አድራሻ",
-    om: "Quunnamtii",
-  },
   "signIn": {
     en: "Sign In",
     am: "ግባ",
@@ -167,16 +151,22 @@ export const translations: Translations = {
   },
 };
 
+// Legacy function - kept for backward compatibility
+// DO NOT USE - Use the new getTranslation from translations/index.ts instead
 export function getTranslation(key: string, language: string = "en"): string {
+  console.warn(`Legacy getTranslation called with key: ${key}. Please use the new translation system from hooks/useTranslation.ts`);
   const translation = translations[key];
   if (!translation) {
     console.warn(`Translation not found for key: ${key}`);
     return key;
   }
   
-  return translation[language as keyof typeof translation] || translation.en;
+  // Map 'ha' to 'am' for backward compatibility
+  const lang = language === "ha" ? "am" : language;
+  return translation[lang as keyof typeof translation] || translation.en;
 }
 
+// Legacy hook - use the new useTranslation from hooks/useTranslation.ts instead
 export function useTranslation() {
   const getCurrentLanguage = (): string => {
     if (typeof window === "undefined") return "en";

@@ -287,9 +287,9 @@ export function Notification() {
               <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
             </Button>
             {unreadCount > 0 && (
-              <span className="rounded-md bg-primary px-[9px] py-0.5 text-xs font-medium text-white">
+          <span className="rounded-md bg-primary px-[9px] py-0.5 text-xs font-medium text-white">
                 {unreadCount} new
-              </span>
+          </span>
             )}
             {unreadCount > 0 && (
               <Button
@@ -337,7 +337,7 @@ export function Notification() {
                         )}
                       >
                         {notification.title}
-                      </strong>
+                  </strong>
                       {!notification.is_read && (
                         <button
                           onClick={(e) => {
@@ -357,9 +357,9 @@ export function Notification() {
                     <p className="mt-1 text-xs text-dark-5 dark:text-dark-6">
                       {formatTime(notification.created_at)}
                     </p>
-                  </div>
+                </div>
                 </button>
-              </li>
+            </li>
             ))
           )}
         </ul>
@@ -371,8 +371,8 @@ export function Notification() {
               router.push("/notifications");
             }}
             className="block w-full rounded-lg border border-primary p-2 text-center text-sm font-medium tracking-wide text-primary outline-none transition-colors hover:bg-blue-light-5 focus:bg-blue-light-5 focus:text-primary focus-visible:border-primary dark:border-dark-3 dark:text-dark-6 dark:hover:border-dark-5 dark:hover:bg-dark-3 dark:hover:text-dark-7 dark:focus-visible:border-dark-5 dark:focus-visible:bg-dark-3 dark:focus-visible:text-dark-7"
-          >
-            See all notifications
+        >
+          See all notifications
           </button>
         )}
       </DropdownContent>

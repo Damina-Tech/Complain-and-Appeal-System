@@ -94,6 +94,7 @@ export default function UsersPage() {
   const [openDialog, setOpenDialog] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successBanner, setSuccessBanner] = useState<string>("");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -327,6 +328,28 @@ export default function UsersPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
+    setFieldErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+    
+    if (!form.first_name?.trim()) {
+      errors.first_name = "First name is required";
+    }
+    
+    if (!form.last_name?.trim()) {
+      errors.last_name = "Last name is required";
+    }
+    
+    if (!form.phone_number?.trim()) {
+      errors.phone_number = "Phone number is required";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError("Please fill in all required fields");
+      return;
+    }
 
     if (!API_URL) {
       setFormError("NEXT_PUBLIC_API_URL is not set");
@@ -334,10 +357,6 @@ export default function UsersPage() {
     }
     if (!token) {
       setFormError("You are not authenticated. Please sign in.");
-      return;
-    }
-    if (!form.email) {
-      setFormError("Email is required.");
       return;
     }
 
@@ -348,15 +367,21 @@ export default function UsersPage() {
       const assignedRole = canAssignAnyRole ? (form.group || "Citizen") : "Citizen";
       
       const payload: Record<string, any> = {
-        username: form.email,       // email as username
-        email: form.email,
-        first_name: form.first_name || undefined,
-        last_name: form.last_name || undefined,
-        phone_number: form.phone_number || undefined,
-        national_id: form.national_id || undefined,
+        username: form.email || `${form.first_name.toLowerCase()}_${Date.now()}`, // email as username, or generate one
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone_number: form.phone_number.trim(),
         status: "active",
         groups: [assignedRole],
       };
+
+      // Add optional fields only if they have values
+      if (form.email?.trim()) {
+        payload.email = form.email.trim();
+      }
+      if (form.national_id?.trim()) {
+        payload.national_id = form.national_id.trim();
+      }
 
       const res = await fetch(`${API_URL}/users/`, {
         method: "POST",
@@ -368,8 +393,106 @@ export default function UsersPage() {
       });
 
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || `Create failed: ${res.status}`);
+        let errorData: any = {};
+        const responseText = await res.text();
+        
+        try {
+          errorData = JSON.parse(responseText);
+        } catch {
+          errorData = { detail: responseText || res.statusText };
+        }
+
+        // Helper function to extract error message
+        const getErrorMessage = (fieldError: any): string => {
+          if (Array.isArray(fieldError)) {
+            return fieldError[0] || "Invalid value";
+          }
+          if (typeof fieldError === 'object' && fieldError !== null) {
+            if (fieldError.non_field_errors) {
+              return Array.isArray(fieldError.non_field_errors) ? fieldError.non_field_errors[0] : String(fieldError.non_field_errors);
+            }
+            if (fieldError.message) {
+              return String(fieldError.message);
+            }
+            const keys = Object.keys(fieldError);
+            if (keys.length > 0) {
+              return String(fieldError[keys[0]]);
+            }
+            return "Invalid value";
+          }
+          return String(fieldError);
+        };
+
+        // Map API field names to form field names
+        const newFieldErrors: Record<string, string> = {};
+        
+        Object.keys(errorData).forEach((key) => {
+          if (key === 'detail' || key === 'message' || key === 'error' || key === 'non_field_errors') {
+            return;
+          }
+          
+          let formFieldName = '';
+          switch (key) {
+            case 'email':
+              formFieldName = 'email';
+              break;
+            case 'phone_number':
+              formFieldName = 'phone_number';
+              break;
+            case 'national_id':
+              formFieldName = 'national_id';
+              break;
+            case 'first_name':
+              formFieldName = 'first_name';
+              break;
+            case 'last_name':
+              formFieldName = 'last_name';
+              break;
+            case 'username':
+              formFieldName = 'email'; // username errors affect email field
+              break;
+            default:
+              formFieldName = key;
+          }
+          
+          if (formFieldName && errorData[key]) {
+            const errorMsg = getErrorMessage(errorData[key]);
+            if (errorMsg && errorMsg !== 'Invalid value') {
+              newFieldErrors[formFieldName] = errorMsg;
+            }
+          }
+        });
+
+        if (Object.keys(newFieldErrors).length > 0) {
+          setFieldErrors(newFieldErrors);
+        }
+
+        // Get general error message
+        let errorMessage = "";
+        if (errorData.detail) {
+          errorMessage = Array.isArray(errorData.detail) ? errorData.detail[0] : String(errorData.detail);
+        } else if (errorData.message) {
+          errorMessage = Array.isArray(errorData.message) ? errorData.message[0] : String(errorData.message);
+        } else if (errorData.error) {
+          errorMessage = Array.isArray(errorData.error) ? errorData.error[0] : String(errorData.error);
+        } else if (Object.keys(newFieldErrors).length > 0) {
+          errorMessage = "Please fix the errors in the form fields";
+        } else {
+          errorMessage = typeof errorData === 'string' ? errorData : JSON.stringify(errorData);
+        }
+
+        if (!errorMessage) {
+          errorMessage = `Create failed (${res.status})`;
+        }
+
+        // Only show general error if there are no field-specific errors
+        if (Object.keys(newFieldErrors).length === 0) {
+          setFormError(errorMessage);
+        } else {
+          setFormError("Please fix the errors below");
+        }
+        
+        return;
       }
 
       // reload users
@@ -382,8 +505,8 @@ export default function UsersPage() {
 
       // success banner for 3s
       setSuccessTitle("User Created");
-    setSuccessMsg("User created successfully. A reset password email will be sent if configured.");
-    setSuccessOpen(true);        // open success modal
+      setSuccessMsg("User created successfully. A reset password email will be sent if configured.");
+      setSuccessOpen(true);        // open success modal
 
       // reset + close
       setForm({
@@ -394,6 +517,7 @@ export default function UsersPage() {
         national_id: "",
         group: canAssignAnyRole ? (roles[0] || "Citizen") : "Citizen",
       });
+      setFieldErrors({});
       setOpenDialog(false);
     } catch (err: any) {
       setFormError(err?.message || "Failed to create user");
@@ -687,44 +811,135 @@ export default function UsersPage() {
         onClose={() => {
           setOpenDialog(false);
           setFormError("");
+          setFieldErrors({});
         }}
         title="Add New User"
       >
         <form className="space-y-4" onSubmit={handleCreate}>
+          {/* General error message at top */}
+          {formError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-red-600 dark:text-red-400">⚠</span>
+                <div>
+                  <p className="font-medium">Validation Error</p>
+                  <p className="mt-1">{formError}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              placeholder="First name"
-              value={form.first_name}
-              onChange={(e) => setForm((s) => ({ ...s, first_name: e.target.value }))}
-            />
-            <Input
-              placeholder="Last name"
-              value={form.last_name}
-              onChange={(e) => setForm((s) => ({ ...s, last_name: e.target.value }))}
-            />
+            <div>
+              <Input
+                placeholder="First name *"
+                value={form.first_name}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, first_name: e.target.value }));
+                  if (fieldErrors.first_name) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.first_name;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.first_name ? "border-red-500" : ""}
+                required
+              />
+              {fieldErrors.first_name && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.first_name}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                placeholder="Last name *"
+                value={form.last_name}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, last_name: e.target.value }));
+                  if (fieldErrors.last_name) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.last_name;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.last_name ? "border-red-500" : ""}
+                required
+              />
+              {fieldErrors.last_name && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.last_name}</p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              placeholder="Email *"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
-              required
-            />
-            <Input
-              placeholder="Phone number"
-              value={form.phone_number}
-              onChange={(e) => setForm((s) => ({ ...s, phone_number: e.target.value }))}
-            />
+            <div>
+              <Input
+                placeholder="Email (optional)"
+                type="email"
+                value={form.email}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, email: e.target.value }));
+                  if (fieldErrors.email) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.email;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.email ? "border-red-500" : ""}
+              />
+              {fieldErrors.email && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                placeholder="Phone number *"
+                value={form.phone_number}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, phone_number: e.target.value }));
+                  if (fieldErrors.phone_number) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.phone_number;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.phone_number ? "border-red-500" : ""}
+                required
+              />
+              {fieldErrors.phone_number && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.phone_number}</p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              placeholder="National ID"
-              value={form.national_id}
-              onChange={(e) => setForm((s) => ({ ...s, national_id: e.target.value }))}
-            />
+            <div>
+              <Input
+                placeholder="National ID (optional)"
+                value={form.national_id}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, national_id: e.target.value }));
+                  if (fieldErrors.national_id) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.national_id;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.national_id ? "border-red-500" : ""}
+              />
+              {fieldErrors.national_id && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.national_id}</p>
+              )}
+            </div>
 
             {/* Role: Citizen for non-directors; dropdown for Director */}
             {canAssignAnyRole ? (
@@ -747,8 +962,6 @@ export default function UsersPage() {
               <Input value="Citizen" readOnly className="opacity-80" />
             )}
           </div>
-
-          {formError && <div className="text-sm text-red-500">{formError}</div>}
 
           <Button
             type="submit"

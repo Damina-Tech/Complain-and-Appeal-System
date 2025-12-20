@@ -59,17 +59,46 @@ type AssignmentRecord = {
 
 /* ===================== Helpers ===================== */
 
-const nameOfUser = (u?: ApiUser | string | number | null) => {
+const nameOfUser = (u?: ApiUser | string | number | null, usersList?: ApiUser[]) => {
   if (!u) return "—";
-  if (typeof u === "string" || typeof u === "number") return String(u);
-  const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
-  return full || u.email || u.username || String(u.id);
+  
+  // If it's already an object with user data, use it
+  if (typeof u === "object" && u !== null && "first_name" in u) {
+    const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+    return full || u.email || u.username || String(u.id);
+  }
+  
+  // If it's an ID (string or number) and we have a users list, look it up
+  if ((typeof u === "string" || typeof u === "number") && usersList) {
+    const found = usersList.find((user) => String(user.id) === String(u));
+    if (found) {
+      const full = `${found.first_name || ""} ${found.last_name || ""}`.trim();
+      return full || found.email || found.username || String(found.id);
+    }
+  }
+  
+  // Fallback: return the ID as string
+  return String(u);
 };
 
-const nameOfOffice = (o?: ApiOffice | string | number | null) => {
+const nameOfOffice = (o?: ApiOffice | string | number | null, officesList?: ApiOffice[]) => {
   if (!o) return "—";
-  if (typeof o === "string" || typeof o === "number") return String(o);
-  return o.name;
+  
+  // If it's already an object with office data, use it
+  if (typeof o === "object" && o !== null && "name" in o) {
+    return o.name;
+  }
+  
+  // If it's an ID (string or number) and we have an offices list, look it up
+  if ((typeof o === "string" || typeof o === "number") && officesList) {
+    const found = officesList.find((office) => String(office.id) === String(o));
+    if (found) {
+      return found.name;
+    }
+  }
+  
+  // Fallback: return the ID as string
+  return String(o);
 };
 
 const caseIdOf = (r: TransferRecord | AssignmentRecord) =>
@@ -121,7 +150,8 @@ export default function CaseActivityPage() {
 
   // Options for manage actions
   const [offices, setOffices] = useState<ApiOffice[]>([]);
-  const [members, setMembers] = useState<ApiUser[]>([]);
+  const [members, setMembers] = useState<ApiUser[]>([]); // Non-Citizen users for assignment dropdown
+  const [allUsers, setAllUsers] = useState<ApiUser[]>([]); // All users for lookup (including Citizens)
 
   // UX
   const [loadingList, setLoadingList] = useState(false);
@@ -223,7 +253,7 @@ export default function CaseActivityPage() {
         fetchAllPaginated<ApiUser>(`${API_URL}/users/`, headers),
       ]);
 
-      // Members: exclude Citizen
+      // Members: exclude Citizen (for assignment dropdown)
       const filteredUsers = usersList.filter((u) => {
         const groups = (u?.groups || [])
           .map((g) => (typeof g === "string" ? g : g?.name))
@@ -233,6 +263,7 @@ export default function CaseActivityPage() {
 
       setOffices(officesList);
       setMembers(filteredUsers);
+      setAllUsers(usersList); // Store all users for lookup purposes
     } catch {
       setOffices([]);
       setMembers([]);
@@ -499,13 +530,33 @@ export default function CaseActivityPage() {
 
                   {mode === "transfer" ? (
                     <>
-                      <TableCell>{nameOfOffice((r as TransferRecord).from_office ?? (r as TransferRecord).from_office_id)}</TableCell>
-                      <TableCell>{nameOfOffice((r as TransferRecord).to_office ?? (r as TransferRecord).to_office_id)}</TableCell>
+                      <TableCell>
+                        {nameOfOffice(
+                          (r as TransferRecord).from_office ?? (r as TransferRecord).from_office_id,
+                          offices
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {nameOfOffice(
+                          (r as TransferRecord).to_office ?? (r as TransferRecord).to_office_id,
+                          offices
+                        )}
+                      </TableCell>
                     </>
                   ) : (
                     <>
-                      <TableCell>{nameOfUser((r as AssignmentRecord).from_user ?? (r as AssignmentRecord).from_user_id)}</TableCell>
-                      <TableCell>{nameOfUser((r as AssignmentRecord).to_user ?? (r as AssignmentRecord).to_user_id)}</TableCell>
+                      <TableCell>
+                        {nameOfUser(
+                          (r as AssignmentRecord).from_user ?? (r as AssignmentRecord).from_user_id,
+                          allUsers
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {nameOfUser(
+                          (r as AssignmentRecord).to_user ?? (r as AssignmentRecord).to_user_id,
+                          allUsers
+                        )}
+                      </TableCell>
                     </>
                   )}
 

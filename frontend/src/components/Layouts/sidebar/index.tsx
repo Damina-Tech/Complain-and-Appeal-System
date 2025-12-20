@@ -10,38 +10,69 @@ import { defaultRouteForRole, slugFromRole } from "@/lib/role";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
 import { MenuItem } from "./menu-item";
 import { useSidebarContext } from "./sidebar-context";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { setIsOpen, isOpen, isMobile, toggleSidebar } = useSidebarContext();
+  const { t } = useTranslation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  
+  // Translation mapping function
+  const translateMenuTitle = (title: string): string => {
+    const translationMap: Record<string, string> = {
+      "Dashboard": t("nav", "dashboard"),
+      "User Management": t("nav", "userManagement"),
+      "User": t("nav", "user"),
+      "Role": t("nav", "role"),
+      "Office": t("nav", "office"),
+      "Complaint / Appeal": t("nav", "complaintAppeal"),
+      "Transfers": t("nav", "transfers"),
+      "My Assigned Cases": t("nav", "myAssigned"),
+      "Feedback / Appeal": t("nav", "feedbackAppeal"),
+      "Reports": t("nav", "reports"),
+      "Announcements": t("nav", "announcements"),
+      "Help & Guidelines": t("nav", "help"),
+      "System Settings": t("nav", "systemSettings"),
+      "MAIN MENU": t("nav", "mainMenu"),
+    };
+    return translationMap[title] || title;
+  };
 
   const toggleExpanded = useCallback((title: string) => {
-    setExpandedItems((prev) => (prev.includes(title) ? [] : [title]));
-
-    // Uncomment the following line to enable multiple expanded items
-    // setExpandedItems((prev) =>
-    //   prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title],
-    // );
+    setExpandedItems((prev) => {
+      // If clicking the same item that's already expanded, close it
+      if (prev.includes(title)) {
+        return [];
+      }
+      // Otherwise, close any other open menu and open the clicked one
+      return [title];
+    });
   }, []);
 
+  // Keep collapsible open when its subpage is active
   useEffect(() => {
-    // Keep collapsible open, when it's subpage is active
     NAV_DATA.some((section) => {
       return section.items.some((item) => {
-        return item.items.some((subItem) => {
-          if (subItem.url === pathname) {
-            if (!expandedItems.includes(item.title)) {
-              toggleExpanded(item.title);
+        if (item.items && item.items.length > 0) {
+          return item.items.some((subItem) => {
+            if (subItem.url === pathname) {
+              // Only update if the parent menu is not already expanded
+              setExpandedItems((prev) => {
+                if (!prev.includes(item.title)) {
+                  return [item.title];
+                }
+                return prev;
+              });
+              return true;
             }
-
-            // Break the loop
-            return true;
-          }
-        });
+            return false;
+          });
+        }
+        return false;
       });
     });
-  }, [pathname, expandedItems, toggleExpanded]);
+  }, [pathname]);
 
   // Get user groups from localStorage (dynamic role checking)
   const [userGroups, setUserGroups] = useState<string[]>([]);
@@ -168,21 +199,50 @@ export function Sidebar() {
     });
   };
 
+  // Prevent body scroll when sidebar is open on mobile
+  useEffect(() => {
+    if (isMobile && isOpen) {
+      // Disable body scroll
+      document.body.style.overflow = "hidden";
+      // Prevent scroll on touch devices
+      document.body.style.position = "fixed";
+      document.body.style.width = "100%";
+    } else {
+      // Re-enable body scroll
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+    }
+
+    // Cleanup on unmount
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+    };
+  }, [isMobile, isOpen]);
+
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Mobile Overlay - Dark backdrop to cover background content */}
       {isMobile && isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-300"
+          className="fixed inset-0 z-[45] bg-black/70 backdrop-blur-sm transition-opacity duration-300"
           onClick={() => setIsOpen(false)}
+          onTouchStart={(e) => {
+            // Prevent touch events from passing through
+            e.preventDefault();
+          }}
           aria-hidden="true"
+          role="button"
+          tabIndex={-1}
         />
       )}
 
       <aside
         className={cn(
           "max-w-[290px] overflow-hidden border-r border-primary/20 bg-gradient-to-b from-primary/5 via-white to-white transition-[width] duration-200 ease-linear dark:border-primary/30 dark:from-primary/10 dark:via-gray-dark dark:to-gray-dark",
-          isMobile ? "fixed bottom-0 top-0 z-50" : "sticky top-0 h-screen",
+          isMobile ? "fixed bottom-0 top-0 z-[50]" : "sticky top-0 h-screen",
           isOpen ? "w-full" : "w-0",
         )}
         aria-label="Main navigation"
@@ -215,13 +275,13 @@ export function Sidebar() {
           <div className="custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 min-[850px]:mt-10">
             {isLoadingGroups ? (
               <div className="flex items-center justify-center py-8">
-                <div className="text-sm text-dark-6 dark:text-dark-6">Loading...</div>
+                <div className="text-sm text-dark-6 dark:text-dark-6">{t("nav", "loading")}</div>
               </div>
             ) : (
               NAV_DATA.map((section) => (
                 <div key={section.label} className="mb-6">
                   <h2 className="mb-5 text-sm font-semibold text-primary/80 dark:text-primary/70">
-                    {section.label}
+                    {translateMenuTitle(section.label)}
                   </h2>
 
                   <nav role="navigation" aria-label={section.label}>
@@ -242,7 +302,7 @@ export function Sidebar() {
                                 aria-hidden="true"
                               />
 
-                              <span>{item.title}</span>
+                              <span>{translateMenuTitle(item.title)}</span>
 
                               <ChevronUp
                                 className={cn(
@@ -270,7 +330,7 @@ export function Sidebar() {
                                       }
                                       isActive={pathname === subItem.url}
                                     >
-                                      <span>{subItem.title}</span>
+                                      <span>{translateMenuTitle(subItem.title)}</span>
                                     </MenuItem>
                                   </li>
                                 ))}
@@ -301,7 +361,7 @@ export function Sidebar() {
                                   aria-hidden="true"
                                 />
 
-                                <span>{item.title}</span>
+                                <span>{translateMenuTitle(item.title)}</span>
                               </MenuItem>
                             );
                           })()

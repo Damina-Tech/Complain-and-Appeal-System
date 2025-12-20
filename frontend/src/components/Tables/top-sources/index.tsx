@@ -26,14 +26,22 @@ export async function TopSources({ className }: { className?: string }) {
         </TableHeader>
 
         <TableBody>
-          {data.map((row) => (
-            <TableRow key={row.name} className="text-center text-base font-medium text-dark dark:text-white">
-              <TableCell className="!text-left">{row.name}</TableCell>
-              <TableCell>{row.submissions}</TableCell>
-              <TableCell>{row.resolvedPct}%</TableCell>
-              <TableCell className="!text-right">{row.avgDays?.toFixed(1) ?? "—"}</TableCell>
+          {data.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={4} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                No data available
+              </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            data.map((row) => (
+              <TableRow key={row.name} className="text-center text-base font-medium text-dark dark:text-white">
+                <TableCell className="!text-left">{row.name}</TableCell>
+                <TableCell>{row.submissions}</TableCell>
+                <TableCell>{row.resolvedPct}%</TableCell>
+                <TableCell className="!text-right">{row.avgDays?.toFixed(1) ?? "—"}</TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>

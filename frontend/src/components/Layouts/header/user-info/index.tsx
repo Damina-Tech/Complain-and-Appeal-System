@@ -20,25 +20,33 @@ export function UserInfo() {
   const router = useRouter();
   const { user, loading } = useCurrentUser();
 
-  // Fallbacks for temp display while loading / if no session
-  const FALLBACK = {
-    name: "John Smith",
-    email: "johnson@nextadmin.com",
-    img: "/images/user/user-03.png",
-  };
+  // If session expired or no user, don't render anything (redirect will happen via useCurrentUser)
+  if (!loading && !user) {
+    return null;
+  }
 
-  const displayName = user?.name || (loading ? "..." : FALLBACK.name);
-  const displayEmail = user?.email || (loading ? "..." : FALLBACK.email);
-  
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="size-12 animate-pulse rounded-full bg-gray-200 dark:bg-dark-3" />
+        <div className="hidden max-[1024px]:sr-only">
+          <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-dark-3" />
+        </div>
+      </div>
+    );
+  }
+
   // Generate avatar URL if no profile image
-  const getAvatarUrl = (img: string | undefined) => {
+  const getAvatarUrl = (img: string | undefined, name: string) => {
     if (img) return img;
     // Generate avatar with initials
-    const name = displayName || "User";
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=200&bold=true`;
   };
   
-  const displayImg = user?.img ? user.img : getAvatarUrl(undefined);
+  const displayName = user?.name || "User";
+  const displayEmail = user?.email || "";
+  const displayImg = user?.img ? user.img : getAvatarUrl(undefined, displayName);
 
   return (
     <Dropdown isOpen={isOpen} setIsOpen={setIsOpen}>
