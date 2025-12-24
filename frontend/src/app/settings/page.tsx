@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { Card } from "@/components/ui/card";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -104,7 +106,7 @@ export default function SettingsPage() {
       // For now, just show success message
       await new Promise((resolve) => setTimeout(resolve, 500));
       
-      setSuccessMsg("Settings saved successfully.");
+      setSuccessMsg(t("settings", "settingsSaved") || "Settings saved successfully.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (err: any) {
@@ -126,7 +128,7 @@ export default function SettingsPage() {
   if (checkingAdmin) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-sm text-gray-500">Loading...</div>
+        <div className="text-sm text-gray-500">{t("common", "loading")}</div>
       </div>
     );
   }
@@ -135,8 +137,8 @@ export default function SettingsPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-          <p className="text-gray-600">You do not have permission to access this page.</p>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">{t("common", "accessDenied") || "Access Denied"}</h1>
+          <p className="text-gray-600">{t("common", "noPermission") || "You do not have permission to access this page."}</p>
         </div>
       </div>
     );
@@ -144,7 +146,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Breadcrumb pageName="System Settings" />
+      <Breadcrumb pageName={t("nav", "settings")} />
 
       <div
         className={cn(
@@ -155,21 +157,21 @@ export default function SettingsPage() {
           {/* System Information */}
           <Card className="p-5">
             <h2 className="mb-4 text-xl font-semibold text-dark dark:text-white">
-              System Information
+              {t("settings", "systemInformation") || "System Information"}
             </h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">System Name</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "systemName") || "System Name"}</label>
                 <Input
                   value={settings.system_name}
                   onChange={(e) =>
                     setSettings({ ...settings, system_name: e.target.value })
                   }
-                  placeholder="System Name"
+                  placeholder={t("settings", "systemName") || "System Name"}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">System Email</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "systemEmail") || "System Email"}</label>
                 <Input
                   type="email"
                   value={settings.system_email}
@@ -180,7 +182,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">System Phone</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "systemPhone") || "System Phone"}</label>
                 <Input
                   value={settings.system_phone}
                   onChange={(e) =>
@@ -195,11 +197,11 @@ export default function SettingsPage() {
           {/* URLs Configuration */}
           <Card className="p-5">
             <h2 className="mb-4 text-xl font-semibold text-dark dark:text-white">
-              URLs Configuration
+              {t("settings", "urlsConfiguration") || "URLs Configuration"}
             </h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">Frontend URL</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "frontendUrl") || "Frontend URL"}</label>
                 <Input
                   value={settings.frontend_url}
                   onChange={(e) =>
@@ -209,7 +211,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">Backend URL</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "backendUrl") || "Backend URL"}</label>
                 <Input
                   value={settings.backend_url}
                   onChange={(e) =>
@@ -224,11 +226,11 @@ export default function SettingsPage() {
           {/* Email Configuration */}
           <Card className="p-5">
             <h2 className="mb-4 text-xl font-semibold text-dark dark:text-white">
-              Email Configuration
+              {t("settings", "emailConfiguration") || "Email Configuration"}
             </h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">Email Host</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "emailHost") || "Email Host"}</label>
                 <Input
                   value={settings.email_host}
                   onChange={(e) =>
@@ -238,7 +240,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">Email Port</label>
+                <label className="mb-1 block text-sm font-medium">{t("settings", "emailPort") || "Email Port"}</label>
                 <Input
                   type="number"
                   value={settings.email_port}
@@ -258,7 +260,7 @@ export default function SettingsPage() {
                     }
                     className="rounded"
                   />
-                  <span className="text-sm font-medium">Use TLS</span>
+                  <span className="text-sm font-medium">{t("settings", "useTls") || "Use TLS"}</span>
                 </label>
               </div>
             </div>
@@ -272,14 +274,14 @@ export default function SettingsPage() {
               variant="outline"
               onClick={() => window.location.reload()}
             >
-              Cancel
+              {t("common", "cancel")}
             </Button>
             <Button
               type="submit"
               className="bg-blue-600 text-white hover:bg-blue-700"
               disabled={saving}
             >
-              {saving ? "Saving..." : "Save Settings"}
+              {saving ? t("common", "loading") : t("settings", "saveSettings") || "Save Settings"}
             </Button>
           </div>
         </form>
@@ -288,7 +290,7 @@ export default function SettingsPage() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={3000}
       />

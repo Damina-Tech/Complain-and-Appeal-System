@@ -11,6 +11,7 @@ import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { Settings, ArrowRight, RefreshCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useTranslation } from "@/hooks/useTranslation";
 
 /* ===================== Types ===================== */
 
@@ -133,6 +134,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise
 /* ===================== Page ===================== */
 
 export default function CaseActivityPage() {
+  const { t } = useTranslation();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
@@ -364,10 +366,10 @@ export default function CaseActivityPage() {
     try {
       if (mode === "transfer") {
         await handleReTransfer();
-        setSuccessMsg("Case re-transferred successfully.");
+        setSuccessMsg(t("activity", "caseReTransferred"));
       } else {
         await handleReAssign();
-        setSuccessMsg("Case re-assigned successfully.");
+        setSuccessMsg(t("activity", "caseReAssigned"));
       }
       setManageOpen(false);
       setSuccessOpen(true);
@@ -395,7 +397,7 @@ export default function CaseActivityPage() {
         throw new Error(msg || `Delete failed: ${res.status}`);
       }
       setManageOpen(false);
-      setSuccessMsg(mode === "transfer" ? "Transfer deleted." : "Assignment deleted.");
+      setSuccessMsg(mode === "transfer" ? t("activity", "transferDeleted") : t("activity", "assignmentDeleted"));
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadLists();
@@ -425,8 +427,8 @@ export default function CaseActivityPage() {
   // Build modal title with case title included
   const modalTitle =
     !selectedRow
-      ? mode === "transfer" ? "Re-Transfer Case" : "Re-Assign Case"
-      : `${mode === "transfer" ? "Re-Transfer" : "Re-Assign"} — ${caseTitleOf(selectedRow)}`;
+      ? mode === "transfer" ? t("activity", "reTransfer") : t("activity", "reAssign")
+      : `${mode === "transfer" ? t("activity", "reTransfer") : t("activity", "reAssign")} — ${caseTitleOf(selectedRow)}`;
   
       
   
@@ -434,7 +436,7 @@ export default function CaseActivityPage() {
 
   return (
     <>
-      <Breadcrumb pageName="Case Activity" />
+      <Breadcrumb pageName={t("nav", "activity")} />
 
       <div className={cn("rounded-[10px] bg-white p-5 shadow-1 dark:bg-gray-dark dark:shadow-card")}>
         {/* Top controls */}
@@ -472,21 +474,21 @@ export default function CaseActivityPage() {
         <Table>
           <TableHeader>
             <TableRow className="[&>th]:text-center">
-              <TableHead className="!text-left">Case</TableHead>
+              <TableHead className="!text-left">{t("activity", "case")}</TableHead>
               {mode === "transfer" ? (
                 <>
-                  <TableHead>From Office</TableHead>
-                  <TableHead>To Office</TableHead>
+                  <TableHead>{t("activity", "fromOffice")}</TableHead>
+                  <TableHead>{t("activity", "toOffice")}</TableHead>
                 </>
               ) : (
                 <>
-                  <TableHead>From User</TableHead>
-                  <TableHead>To User</TableHead>
+                  <TableHead>{t("activity", "fromUser")}</TableHead>
+                  <TableHead>{t("activity", "toUser")}</TableHead>
                 </>
               )}
-              <TableHead>Reason</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead>{t("activity", "reason")}</TableHead>
+              <TableHead>{t("activity", "date")}</TableHead>
+              <TableHead>{t("common", "actions")}</TableHead>
             </TableRow>
           </TableHeader>
 
@@ -494,7 +496,7 @@ export default function CaseActivityPage() {
             {loadingList && (
               <TableRow>
                 <TableCell colSpan={6} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  Loading…
+                  {t("common", "loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -510,7 +512,7 @@ export default function CaseActivityPage() {
             {!loadingList && !error && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  No records found
+                  {t("activity", "noRecordsFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -575,10 +577,10 @@ export default function CaseActivityPage() {
                       size="sm"
                       className="mx-auto flex items-center gap-2"
                       onClick={() => openManage(r as any, mode)}
-                      title="Manage"
+                      title={t("activity", "manage")}
                     >
                       <Settings className="h-4 w-4 text-blue-600" />
-                      Manage
+                      {t("activity", "manage")}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -590,7 +592,7 @@ export default function CaseActivityPage() {
         {!loadingList && !error && rows.length > itemsPerPage && (
           <div className="mt-4 flex items-center justify-between border-t border-stroke pt-4 dark:border-dark-3">
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Showing {startIndex + 1} to {Math.min(endIndex, rows.length)} of {rows.length} {mode === "transfer" ? "transfers" : "assignments"}
+              {t("activity", "showing")} {startIndex + 1} {t("activity", "to")} {Math.min(endIndex, rows.length)} {t("activity", "of")} {rows.length} {mode === "transfer" ? t("activity", "transfers") : t("activity", "assignments")}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -654,13 +656,13 @@ export default function CaseActivityPage() {
           <div className="space-y-4">
             {mode === "transfer" ? (
               <div>
-                <label className="mb-1 block text-sm font-medium">To Office</label>
+                <label className="mb-1 block text-sm font-medium">{t("activity", "toOffice")}</label>
                 <select
                   className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
                   value={selectedOfficeId}
                   onChange={(e) => setSelectedOfficeId(e.target.value)}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">— {t("common", "select")} —</option>
                   {officeOptions.map((o) => (
                     <option key={o.id} value={o.id}>{o.label}</option>
                   ))}
@@ -668,13 +670,13 @@ export default function CaseActivityPage() {
               </div>
             ) : (
               <div>
-                <label className="mb-1 block text-sm font-medium">Assign To</label>
+                <label className="mb-1 block text-sm font-medium">{t("activity", "toUser")}</label>
                 <select
                   className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
                   value={selectedMemberId}
                   onChange={(e) => setSelectedMemberId(e.target.value)}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">— {t("common", "select")} —</option>
                   {memberOptions.map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
@@ -683,11 +685,11 @@ export default function CaseActivityPage() {
             )}
 
             <div>
-              <label className="mb-1 block text-sm font-medium">Reason</label>
+              <label className="mb-1 block text-sm font-medium">{t("activity", "reason")}</label>
               <textarea
                 className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
                 rows={3}
-                placeholder={mode === "transfer" ? "Reason for transfer…" : "Reason for assignment…"}
+                placeholder={mode === "transfer" ? `${t("activity", "reason")}...` : `${t("activity", "reason")}...`}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
@@ -695,7 +697,7 @@ export default function CaseActivityPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setManageOpen(false)}>Cancel</Button>
+                <Button variant="ghost" onClick={() => setManageOpen(false)}>{t("common", "cancel")}</Button>
                 <Button
                   className={mode === "transfer" ? "bg-yellow-600 hover:bg-yellow-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}
                   onClick={onConfirmManage}
@@ -705,7 +707,7 @@ export default function CaseActivityPage() {
                       : !selectedMemberId || !reason.trim()
                   }
                 >
-                  {mode === "transfer" ? "Confirm Transfer" : "Confirm Assign"}
+                  {mode === "transfer" ? t("activity", "confirmTransfer") : t("activity", "confirmAssign")}
                 </Button>
               </div>
 
@@ -716,7 +718,7 @@ export default function CaseActivityPage() {
                   onClick={() => (confirmDelete ? onDeleteRecord() : setConfirmDelete(true))}
                   disabled={deleting}
                 >
-                  {deleting ? "Deleting..." : confirmDelete ? "Click to Confirm" : "Delete"}
+                  {deleting ? t("common", "loading") : confirmDelete ? t("common", "confirm") : t("common", "delete")}
                 </Button>
               </div>
             </div>
@@ -728,7 +730,7 @@ export default function CaseActivityPage() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={3000}
       />

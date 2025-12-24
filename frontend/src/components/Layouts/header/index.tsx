@@ -11,20 +11,20 @@ import { UserInfo } from "./user-info";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useMemo, memo } from "react";
 
-export function Header() {
+export const Header = memo(function Header() {
   const { toggleSidebar, isMobile } = useSidebarContext();
   const { user, loading } = useCurrentUser();
   const { t } = useTranslation();
 
-  // Get user's first name for welcome message
-  const getUserFirstName = () => {
+  // Memoize user's first name to prevent recalculation
+  const welcomeName = useMemo(() => {
+    if (loading) return "...";
     if (!user?.name) return "User";
     const firstName = user.name.split(" ")[0];
     return firstName || "User";
-  };
-
-  const welcomeName = loading ? "..." : getUserFirstName();
+  }, [user?.name, loading]);
   
   // If session expired, don't render header content (redirect will happen via useCurrentUser)
   if (!loading && !user) {
@@ -85,4 +85,4 @@ export function Header() {
       </div>
     </header>
   );
-}
+});

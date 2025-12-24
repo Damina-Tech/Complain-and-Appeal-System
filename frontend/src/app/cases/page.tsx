@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { TextAreaGroup } from "@/components/FormElements/InputGroup/text-area";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type Attachment = { name: string; type: string; size: number; data: string; file?: File };
 
@@ -60,6 +61,7 @@ type Row = {
 };
 
 export default function ComplaintAppealPage() {
+  const { t } = useTranslation();
   const [category, setCategory] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   const [date, setDate] = useState<Date | undefined>();
@@ -298,7 +300,7 @@ export default function ComplaintAppealPage() {
 
   return (
     <>
-      <Breadcrumb pageName="Complaints & Appeals" />
+      <Breadcrumb pageName={t("nav", "complaintAppeal")} />
 
       <div
         className={cn(
@@ -310,7 +312,7 @@ export default function ComplaintAppealPage() {
           <div className="flex flex-wrap gap-2">
             <Select onValueChange={(val) => setCategory(val)} defaultValue="all">
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Category" />
+                <SelectValue placeholder={t("cases", "category")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
@@ -320,7 +322,7 @@ export default function ComplaintAppealPage() {
             </Select>
 
             <Input
-              placeholder="Search by Title"
+              placeholder={t("common", "search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-[250px]"
@@ -331,7 +333,7 @@ export default function ComplaintAppealPage() {
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
             onClick={() => setOpenDialog(true)}
           >
-            + Add New
+            + {t("cases", "addNew")}
           </Button>
         </div>
 
@@ -339,13 +341,13 @@ export default function ComplaintAppealPage() {
         <Table>
           <TableHeader>
             <TableRow className="[&>th]:text-center">
-              <TableHead className="!text-left">Title</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Channel</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead className="!text-left">{t("cases", "title")}</TableHead>
+              <TableHead>{t("cases", "category")}</TableHead>
+              <TableHead>{t("cases", "channel")}</TableHead>
+              <TableHead>{t("cases", "priority")}</TableHead>
+              <TableHead>{t("cases", "date")}</TableHead>
+              <TableHead>{t("cases", "status")}</TableHead>
+              <TableHead>{t("common", "actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -355,7 +357,7 @@ export default function ComplaintAppealPage() {
                   colSpan={7}
                   className="py-4 text-center text-gray-500 dark:text-gray-300"
                 >
-                  Loading...
+                  {t("common", "loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -372,7 +374,7 @@ export default function ComplaintAppealPage() {
                   colSpan={7}
                   className="py-4 text-center text-gray-500 dark:text-gray-300"
                 >
-                  No records found
+                  {t("activity", "noRecordsFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -401,7 +403,7 @@ export default function ComplaintAppealPage() {
                         size="icon"
                         variant="ghost"
                         onClick={() => router.push(`/cases/${item.id}/view`)}
-                        title="View"
+                        title={t("common", "view")}
                       >
                         <Eye className="h-4 w-4 text-blue-500" />
                       </Button>
@@ -409,7 +411,7 @@ export default function ComplaintAppealPage() {
                         size="icon"
                         variant="ghost"
                         onClick={() => router.push(`/cases/${item.id}/edit`)}
-                        title="Edit"
+                        title={t("common", "edit")}
                       >
                         <Pencil className="h-4 w-4 text-green-500" />
                       </Button>
@@ -421,7 +423,7 @@ export default function ComplaintAppealPage() {
                             setCaseToDelete(item);
                             setDeleteConfirmOpen(true);
                           }}
-                          title="Delete"
+                          title={t("common", "delete")}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -508,7 +510,7 @@ export default function ComplaintAppealPage() {
             reported_by: null,
           });
         }}
-        title="Add New Case"
+        title={t("cases", "createCase")}
         maxWidthClassName="max-w-2xl"
       >
         <form
@@ -668,11 +670,11 @@ export default function ComplaintAppealPage() {
               await loadCases();
 
               // success modal
-              setSuccessMsg("Case created successfully.");
+              setSuccessMsg(t("common", "success"));
               setSuccessOpen(true);
               setTimeout(() => setSuccessOpen(false), 3000);
             } catch (err: any) {
-              const errorMsg = err?.message || "Failed to create case";
+              const errorMsg = err?.message || t("common", "error");
               setFormErrors({ general: errorMsg });
             } finally {
               setCreating(false);
@@ -688,10 +690,10 @@ export default function ComplaintAppealPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Title <span className="text-red-500">*</span>
+              {t("cases", "title")} <span className="text-red-500">*</span>
             </label>
           <Input
-              placeholder="Enter case title"
+              placeholder={t("forms", "enterTitle")}
             value={form.title}
               onChange={(e) => {
                 setForm((s) => ({ ...s, title: e.target.value }));
@@ -725,7 +727,7 @@ export default function ComplaintAppealPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Category <span className="text-red-500">*</span>
+              {t("cases", "category")} <span className="text-red-500">*</span>
             </label>
           <Select
             value={form.category}
@@ -735,7 +737,7 @@ export default function ComplaintAppealPage() {
               }}
           >
               <SelectTrigger className={formErrors.category ? "border-red-500" : ""}>
-              <SelectValue placeholder="Select Category" />
+              <SelectValue placeholder={t("forms", "selectCategory")} />
             </SelectTrigger>
             <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
               <SelectItem value="land">Land</SelectItem>
@@ -768,7 +770,7 @@ export default function ComplaintAppealPage() {
                 <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
                   <SelectItem value="none">None</SelectItem>
                   {loadingUsers ? (
-                    <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                    <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
                   ) : (
                     users.map((user) => (
                       <SelectItem key={user.id} value={String(user.id)}>
@@ -1201,12 +1203,12 @@ export default function ComplaintAppealPage() {
           setDeleteConfirmOpen(false);
           setCaseToDelete(null);
         }}
-        title="Delete Case"
+        title={t("cases", "deleteCase")}
         maxWidthClassName="max-w-md"
       >
         <div className="space-y-4">
           <p className="text-gray-700 dark:text-gray-300">
-            Are you sure you want to delete case &quot;{caseToDelete?.title}&quot;? This action cannot be undone.
+            {t("common", "confirm")} {t("cases", "deleteCase")} &quot;{caseToDelete?.title}&quot;? {t("common", "confirm")}
           </p>
           <div className="flex justify-end gap-2">
             <Button
@@ -1259,7 +1261,7 @@ export default function ComplaintAppealPage() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={6000}
       />

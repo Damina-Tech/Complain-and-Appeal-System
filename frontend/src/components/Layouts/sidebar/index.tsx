@@ -4,7 +4,7 @@ import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { NAV_DATA } from "./data";
 import { defaultRouteForRole, slugFromRole } from "@/lib/role";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
@@ -18,8 +18,8 @@ export function Sidebar() {
   const { t } = useTranslation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   
-  // Translation mapping function
-  const translateMenuTitle = (title: string): string => {
+  // Memoize translation mapping to prevent recreation on every render
+  const translateMenuTitle = useCallback((title: string): string => {
     const translationMap: Record<string, string> = {
       "Dashboard": t("nav", "dashboard"),
       "User Management": t("nav", "userManagement"),
@@ -37,7 +37,7 @@ export function Sidebar() {
       "MAIN MENU": t("nav", "mainMenu"),
     };
     return translationMap[title] || title;
-  };
+  }, [t]);
 
   const toggleExpanded = useCallback((title: string) => {
     setExpandedItems((prev) => {
@@ -78,95 +78,92 @@ export function Sidebar() {
   const [userGroups, setUserGroups] = useState<string[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(true);
 
-  useEffect(() => {
-    const loadUserGroups = async () => {
-      if (typeof window === "undefined") {
-        setIsLoadingGroups(false);
-        return;
-      }
-
-      // Always fetch from API to ensure we have the latest groups
-      const token = localStorage.getItem("token");
-      if (token) {
-        try {
-          const API_URL = process.env.NEXT_PUBLIC_API_URL;
-          const res = await fetch(`${API_URL}/auth/me/`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const groups = (data.user_groups || []).map((g: string) => g).filter(Boolean);
-            setUserGroups(groups);
-            localStorage.setItem("user_groups", JSON.stringify(groups));
-            console.log("✅ Sidebar loaded user groups from API:", groups);
-            setIsLoadingGroups(false);
-            return;
-          } else {
-            console.error("❌ Failed to fetch user groups:", res.status, res.statusText);
-          }
-        } catch (e) {
-          console.error("❌ Failed to load user groups:", e);
-        }
-      }
-
-      // Fallback to localStorage if API fails
-      try {
-        const raw = localStorage.getItem("user_groups");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const groups = parsed
-              .map((g) => (typeof g === "string" ? g : g?.name))
-              .filter(Boolean) as string[];
-            setUserGroups(groups);
-          }
-        }
-      } catch {
-        // Ignore errors
-      }
-      
+  // Memoize loadUserGroups to prevent recreation
+  const loadUserGroups = useCallback(async () => {
+    if (typeof window === "undefined") {
       setIsLoadingGroups(false);
-    };
+      return;
+    }
 
+    // Always fetch from API to ensure we have the latest groups
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL;
+        const res = await fetch(`${API_URL}/auth/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const groups = (data.user_groups || []).map((g: string) => g).filter(Boolean);
+          setUserGroups(groups);
+          localStorage.setItem("user_groups", JSON.stringify(groups));
+          setIsLoadingGroups(false);
+          return;
+        }
+      } catch (e) {
+        // Silently fail and fallback to localStorage
+      }
+    }
+
+    // Fallback to localStorage if API fails
+    try {
+      const raw = localStorage.getItem("user_groups");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const groups = parsed
+            .map((g) => (typeof g === "string" ? g : g?.name))
+            .filter(Boolean) as string[];
+          setUserGroups(groups);
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+    
+    setIsLoadingGroups(false);
+  }, []);
+
+  useEffect(() => {
     loadUserGroups();
     
-    // Reload when pathname changes (e.g., after login redirect)
+    // Only reload on focus if pathname changed (not on every focus)
     const handleFocus = () => {
-      loadUserGroups();
+      // Debounce focus events - only reload if it's been more than 5 seconds
+      const lastLoad = sessionStorage.getItem("sidebar_last_load");
+      const now = Date.now();
+      if (!lastLoad || now - parseInt(lastLoad) > 5000) {
+        loadUserGroups();
+        sessionStorage.setItem("sidebar_last_load", now.toString());
+      }
     };
+    
     window.addEventListener("focus", handleFocus);
     
     return () => {
       window.removeEventListener("focus", handleFocus);
     };
-  }, [pathname]);
+  }, [loadUserGroups]);
 
-  // Fallback: also check role from localStorage if user_groups not loaded
-  const roleFromStorage =
-    typeof window !== "undefined" ? localStorage.getItem("role") : null;
+  // Memoize role checks to prevent recalculation
+  const roleFromStorage = useMemo(
+    () => (typeof window !== "undefined" ? localStorage.getItem("role") : null),
+    [userGroups] // Recalculate when userGroups change
+  );
 
-  // Check if user has Admin role (full system access)
-  const hasAdmin = userGroups.includes("Admin");
-  
-  // Check if user has Mayor Office role (highest level - should have all access)
-  const hasMayorOffice = userGroups.includes("Mayor Office");
-  
-  // Check if user has any staff role (non-citizen)
-  const hasStaffRole = userGroups.some((role) => role !== "Citizen") || 
-    (roleFromStorage && roleFromStorage !== "Citizen");
+  // Memoize role checks
+  const hasAdmin = useMemo(() => userGroups.includes("Admin"), [userGroups]);
+  const hasMayorOffice = useMemo(() => userGroups.includes("Mayor Office"), [userGroups]);
+  const hasStaffRole = useMemo(
+    () => userGroups.some((role) => role !== "Citizen") || 
+      (roleFromStorage && roleFromStorage !== "Citizen"),
+    [userGroups, roleFromStorage]
+  );
 
-  // Debug: Log user groups for troubleshooting
-  useEffect(() => {
-    if (userGroups.length > 0) {
-      console.log("Sidebar - User Groups:", userGroups);
-      console.log("Sidebar - Has Admin:", hasAdmin);
-      console.log("Sidebar - Has Mayor Office:", hasMayorOffice);
-    }
-  }, [userGroups, hasAdmin, hasMayorOffice]);
-
-  // Dynamic filter: Admin and Mayor Office get all access, others check allowedRoles
-  const filterByRole = (
+  // Memoize filterByRole function to prevent recreation
+  const filterByRole = useCallback((
     items: Array<{ allowedRoles?: string[] } & Record<string, any>>,
   ) => {
     // Admin gets full access - bypass all checks
@@ -197,7 +194,7 @@ export function Sidebar() {
       
       return hasAllowedRole;
     });
-  };
+  }, [hasAdmin, hasMayorOffice, userGroups, roleFromStorage]);
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {

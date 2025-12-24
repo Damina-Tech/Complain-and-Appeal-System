@@ -15,7 +15,15 @@ class User(AbstractUser):
     added_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='added_users')
     status_changed_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='status_changed_users')
     is_deleted = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)   
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['office', 'status']),
+            models.Index(fields=['email']),
+            models.Index(fields=['is_deleted']),
+        ]
 
 
 class Office(models.Model):
@@ -93,6 +101,14 @@ class Case(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['category_id']),
+            models.Index(fields=['citizen_id', 'status']),
+            models.Index(fields=['office_id', 'status']),
+            models.Index(fields=['deleted_by']),
+        ]
 
     def __str__(self):
         return f"{self.title} ({self.get_category_id_display()})"
@@ -106,6 +122,10 @@ class CaseStatusHistory(models.Model):
 
     class Meta:
         ordering = ["-changed_at"]
+        indexes = [
+            models.Index(fields=['case', '-changed_at']),
+            models.Index(fields=['status']),
+        ]
 
     def __str__(self):
         return f"Case {self.case_id} -> {self.status} @ {self.changed_at:%Y-%m-%d %H:%M}"
@@ -121,6 +141,10 @@ class CaseFeedback(models.Model):
     class Meta:
         unique_together = ("case", "created_by")
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['case', '-created_at']),
+            models.Index(fields=['created_by']),
+        ]
 
     def __str__(self):
         return f"Feedback Case#{self.case_id_id} by {self.created_by_id} ({self.rating})"
@@ -135,6 +159,10 @@ class Transfer(models.Model):
 
     class Meta:
         ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=['case_id', '-timestamp']),
+            models.Index(fields=['to_office_id']),
+        ]
 
     def __str__(self):
         return f"Transfer Case#{self.case_id_id} {self.from_office_id} -> {self.to_office_id} @ {self.timestamp:%Y-%m-%d %H:%M}"
@@ -151,6 +179,11 @@ class Assignment(models.Model):
 
     class Meta:
         ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=['case_id', '-timestamp']),
+            models.Index(fields=['to_user_id']),
+            models.Index(fields=['from_user_id']),
+        ]
 
     def __str__(self):
         return f"Assignment Case#{self.case_id_id} {self.from_user_id} -> {self.to_user_id} @ {self.timestamp:%Y-%m-%d %H:%M}"
@@ -189,9 +222,24 @@ class RoleHierarchy(models.Model):
 
 
 class Announcement(models.Model):
+    DELIVERY_MODES = [
+        ("in_app", "In-App Notification"),
+        ("email", "Email"),
+        ("sms", "SMS"),
+        ("whatsapp", "WhatsApp"),
+        ("telegram", "Telegram"),
+        ("all", "All Channels"),
+    ]
+    
     title       = models.CharField(max_length=200)
     content     = models.TextField()
     is_active   = models.BooleanField(default=True)
+    
+    # Delivery modes - JSONField to store multiple delivery channels
+    delivery_modes = models.JSONField(
+        default=list,
+        help_text="List of delivery channels: in_app, email, sms, whatsapp, telegram"
+    )
 
     # audience
     recipients_groups  = models.ManyToManyField(Group, blank=True, related_name="announcements")   # roles

@@ -7,8 +7,10 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { X } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export function UploadPhotoForm() {
+  const { t } = useTranslation();
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -125,7 +127,7 @@ export function UploadPhotoForm() {
 
       const updated = await res.json();
       setProfileImage(updated.profile_image_url || null);
-      setSuccessMsg("Profile image updated successfully.");
+      setSuccessMsg(t("settings", "profileImageUpdated") || "Profile image updated successfully.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
@@ -161,7 +163,7 @@ export function UploadPhotoForm() {
       }
 
       setProfileImage(null);
-      setSuccessMsg("Profile image deleted successfully.");
+      setSuccessMsg(t("settings", "profileImageDeleted") || "Profile image deleted successfully.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
@@ -173,14 +175,14 @@ export function UploadPhotoForm() {
 
   if (loading) {
     return (
-      <ShowcaseSection title="Your Photo" className="!p-7">
-        <div className="py-8 text-center text-gray-500">Loading...</div>
+      <ShowcaseSection title={t("settings", "yourPhoto") || "Your Photo"} className="!p-7">
+        <div className="py-8 text-center text-gray-500">{t("common", "loading")}</div>
       </ShowcaseSection>
     );
   }
 
   return (
-    <ShowcaseSection title="Your Photo" className="!p-7">
+    <ShowcaseSection title={t("settings", "yourPhoto") || "Your Photo"} className="!p-7">
       {error && (
         <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
           {error}
@@ -205,7 +207,7 @@ export function UploadPhotoForm() {
 
           <div>
             <span className="mb-1.5 block font-medium text-dark dark:text-white">
-              Edit your photo
+              {t("settings", "editYourPhoto") || "Edit your photo"}
             </span>
             <span className="flex gap-3">
               {profileImage && (
@@ -215,7 +217,7 @@ export function UploadPhotoForm() {
                   disabled={deleting}
                   className="text-body-sm hover:text-red disabled:opacity-50"
                 >
-                  {deleting ? "Deleting..." : "Delete"}
+                  {deleting ? t("common", "loading") : t("common", "delete")}
                 </button>
               )}
             </span>
@@ -242,14 +244,14 @@ export function UploadPhotoForm() {
             </div>
 
             <p className="mt-2.5 text-body-sm font-medium">
-              <span className="text-primary">Click to upload</span> or drag and drop
+              <span className="text-primary">{t("settings", "clickToUpload") || "Click to upload"}</span> {t("common", "or")} {t("settings", "dragAndDrop") || "drag and drop"}
             </p>
 
             <p className="mt-1 text-body-xs">
-              SVG, PNG, JPG or GIF (max, 800 X 800px)
+              SVG, PNG, JPG {t("common", "or")} GIF ({t("common", "max") || "max"}, 800 X 800px)
             </p>
             {uploading && (
-              <p className="mt-2 text-sm text-gray-500">Uploading...</p>
+              <p className="mt-2 text-sm text-gray-500">{t("settings", "uploading") || "Uploading..."}</p>
             )}
           </label>
         </div>
@@ -258,7 +260,7 @@ export function UploadPhotoForm() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={3000}
       />

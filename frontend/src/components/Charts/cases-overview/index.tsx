@@ -3,11 +3,26 @@ import { standardFormat } from "@/lib/format-number";
 import { cn } from "@/lib/utils";
 import { getCasesOverviewData } from "@/services/case-reports-services"; // <-- this path
 import { CasesOverviewChart } from "./chart";
+import { cookies } from "next/headers";
+import { translations } from "@/lib/translations";
 
 type PropsType = { timeFrame?: string; className?: string };
 
 export async function CasesOverview({ timeFrame = "monthly", className }: PropsType) {
   const data = await getCasesOverviewData(timeFrame);
+  
+  // Get language from cookies for server component
+  const cookieStore = await cookies();
+  const lang = (cookieStore.get("selectedLanguage")?.value || "en") as "en" | "am" | "om";
+  
+  // Helper function to get translation with language
+  const t = (ns: "dashboard" | "common" | "cases", key: string) => {
+    const namespaceTranslations = translations[ns];
+    if (!namespaceTranslations) return key;
+    const langTranslations = namespaceTranslations[lang];
+    if (!langTranslations) return key;
+    return (langTranslations as any)[key] || key;
+  };
 
   return (
     <div className={cn(
@@ -15,7 +30,7 @@ export async function CasesOverview({ timeFrame = "monthly", className }: PropsT
       className
     )}>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-body-2xlg font-bold text-dark dark:text-white">Cases Overview</h2>
+        <h2 className="text-body-2xlg font-bold text-dark dark:text-white">{t("dashboard", "casesOverview")}</h2>
         <PeriodPicker defaultValue={timeFrame} sectionKey="cases_overview" />
       </div>
 
@@ -26,13 +41,13 @@ export async function CasesOverview({ timeFrame = "monthly", className }: PropsT
           <dt className="text-xl font-bold text-dark dark:text-white">
             {standardFormat(data.open.reduce((a, p) => a + p.y, 0))}
           </dt>
-          <dd className="font-medium dark:text-dark-6">Open</dd>
+          <dd className="font-medium dark:text-dark-6">{t("cases", "open")}</dd>
         </div>
         <div>
           <dt className="text-xl font-bold text-dark dark:text-white">
             {standardFormat(data.resolved.reduce((a, p) => a + p.y, 0))}
           </dt>
-          <dd className="font-medium dark:text-dark-6">Resolved</dd>
+          <dd className="font-medium dark:text-dark-6">{t("common", "resolved")}</dd>
         </div>
       </dl>
     </div>

@@ -12,6 +12,7 @@ import { ShowcaseSection } from "@/components/Layouts/showcase-section";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { SuccessModal } from "@/components/ui/success-modal";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type UserData = {
   id: number | string;
@@ -25,6 +26,7 @@ type UserData = {
 };
 
 export function PersonalInfoForm() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -132,14 +134,14 @@ export function PersonalInfoForm() {
 
   if (loading) {
     return (
-      <ShowcaseSection title="Personal Information" className="!p-7">
-        <div className="py-8 text-center text-gray-500">Loading...</div>
+      <ShowcaseSection title={t("settings", "personalInformation") || "Personal Information"} className="!p-7">
+        <div className="py-8 text-center text-gray-500">{t("common", "loading")}</div>
       </ShowcaseSection>
     );
   }
 
   return (
-    <ShowcaseSection title="Personal Information" className="!p-7">
+    <ShowcaseSection title={t("settings", "personalInformation") || "Personal Information"} className="!p-7">
       {error && (
         <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
           {error}
@@ -151,8 +153,8 @@ export function PersonalInfoForm() {
             className="w-full sm:w-1/2"
             type="text"
             name="first_name"
-            label="First Name"
-            placeholder="First name"
+            label={t("forms", "firstName")}
+            placeholder={t("forms", "firstName")}
             value={formData.first_name}
             onChange={(e) => setFormData((s) => ({ ...s, first_name: e.target.value }))}
             icon={<UserIcon />}
@@ -164,8 +166,8 @@ export function PersonalInfoForm() {
             className="w-full sm:w-1/2"
             type="text"
             name="last_name"
-            label="Last Name"
-            placeholder="Last name"
+            label={t("forms", "lastName")}
+            placeholder={t("forms", "lastName")}
             value={formData.last_name}
             onChange={(e) => setFormData((s) => ({ ...s, last_name: e.target.value }))}
             icon={<UserIcon />}
@@ -179,7 +181,7 @@ export function PersonalInfoForm() {
             className="w-full sm:w-1/2"
             type="email"
             name="email"
-            label="Email Address"
+            label={t("forms", "emailAddress") || "Email Address"}
             placeholder="email@example.com"
             value={formData.email}
             onChange={(e) => setFormData((s) => ({ ...s, email: e.target.value }))}
@@ -192,7 +194,7 @@ export function PersonalInfoForm() {
             className="w-full sm:w-1/2"
             type="text"
             name="phone_number"
-            label="Phone Number"
+            label={t("forms", "phone")}
             placeholder="+1234567890"
             value={formData.phone_number}
             onChange={(e) => setFormData((s) => ({ ...s, phone_number: e.target.value }))}
@@ -206,8 +208,8 @@ export function PersonalInfoForm() {
           className="mb-5.5"
           type="text"
           name="username"
-          label="Username"
-          placeholder="username"
+          label={t("forms", "username") || "Username"}
+          placeholder={t("forms", "username") || "username"}
           value={formData.username}
           disabled
           icon={<UserIcon />}
@@ -219,8 +221,8 @@ export function PersonalInfoForm() {
           className="mb-5.5"
           type="text"
           name="national_id"
-          label="National ID"
-          placeholder="National ID"
+          label={t("forms", "nationalId")}
+          placeholder={t("forms", "nationalId")}
           value={formData.national_id}
           onChange={(e) => setFormData((s) => ({ ...s, national_id: e.target.value }))}
           icon={<UserIcon />}
@@ -230,8 +232,8 @@ export function PersonalInfoForm() {
 
         <TextAreaGroup
           className="mb-5.5"
-          label="Address"
-          placeholder="Enter your address"
+          label={t("forms", "address") || "Address"}
+          placeholder={t("forms", "enterAddress") || "Enter your address"}
           value={formData.address}
           onChange={(e) => setFormData((s) => ({ ...s, address: e.target.value }))}
           icon={<PencilSquareIcon />}
@@ -243,7 +245,7 @@ export function PersonalInfoForm() {
             variant="outline"
             className="rounded-lg border border-stroke px-6 py-[7px] font-medium text-dark hover:shadow-1 dark:border-dark-3 dark:text-white"
           >
-            Cancel
+            {t("common", "cancel")}
           </Button>
 
           <Button
@@ -251,7 +253,7 @@ export function PersonalInfoForm() {
             disabled={saving}
             className="rounded-lg bg-primary px-6 py-[7px] font-medium text-gray-2 hover:bg-opacity-90"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("common", "loading") : t("common", "save")}
           </Button>
         </div>
       </form>
@@ -259,8 +261,8 @@ export function PersonalInfoForm() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
-        message="Profile updated successfully."
+        title={t("common", "success")}
+        message={t("settings", "profileUpdated") || "Profile updated successfully."}
         autoCloseMs={3000}
       />
     </ShowcaseSection>

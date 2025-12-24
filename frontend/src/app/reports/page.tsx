@@ -17,6 +17,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { RefreshCcw, Download } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 /* ===================== Types ===================== */
 
@@ -351,13 +352,13 @@ export default function ReportsPage() {
 
   return (
     <>
-      <Breadcrumb pageName="Reports" />
+      <Breadcrumb pageName={t("nav", "reports")} />
 
       <div className={cn("rounded-[10px] bg-white p-5 shadow-1 dark:bg-gray-dark dark:shadow-card")}>
         {/* Filters */}
         <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-3">
-            <label className="mb-1 block text-sm font-medium">From</label>
+            <label className="mb-1 block text-sm font-medium">{t("common", "from") || "From"}</label>
             <Input
               type="date"
               value={filters.date_from}
@@ -365,7 +366,7 @@ export default function ReportsPage() {
             />
           </div>
           <div className="md:col-span-3">
-            <label className="mb-1 block text-sm font-medium">To</label>
+            <label className="mb-1 block text-sm font-medium">{t("common", "to")}</label>
             <Input
               type="date"
               value={filters.date_to}
@@ -373,16 +374,16 @@ export default function ReportsPage() {
             />
           </div>
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Status</label>
+            <label className="mb-1 block text-sm font-medium">{t("cases", "status")}</label>
             <Select
               value={filters.status}
               onValueChange={(v) => setFilters((s) => ({ ...s, status: v }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t("cases", "status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("common", "all")}</SelectItem>
                 {statuses.map((s) => (
                   <SelectItem key={s} value={s}>
                     {s[0].toUpperCase() + s.slice(1)}
@@ -392,16 +393,16 @@ export default function ReportsPage() {
             </Select>
           </div>
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Category</label>
+            <label className="mb-1 block text-sm font-medium">{t("cases", "category")}</label>
             <Select
               value={filters.category}
               onValueChange={(v) => setFilters((s) => ({ ...s, category: v }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Category" />
+                <SelectValue placeholder={t("cases", "category")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("common", "all")}</SelectItem>
                 {categories.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c[0].toUpperCase() + c.slice(1)}
@@ -411,16 +412,16 @@ export default function ReportsPage() {
             </Select>
           </div>
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Office</label>
+            <label className="mb-1 block text-sm font-medium">{t("cases", "office")}</label>
             <Select
               value={filters.office_id}
               onValueChange={(v) => setFilters((s) => ({ ...s, office_id: v }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Office" />
+                <SelectValue placeholder={t("cases", "office")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("common", "all")}</SelectItem>
                 {offices.map((o) => (
                   <SelectItem key={o.id} value={o.id}>
                     {o.name}
@@ -433,12 +434,12 @@ export default function ReportsPage() {
           {/* Search & Actions */}
           <div className="md:col-span-12 mt-2 flex flex-wrap items-center gap-2">
             <Input
-              placeholder="Search (status, office, category, assignee)…"
+              placeholder={t("common", "search")}
               className="w-full max-w-xs"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Button variant="ghost" onClick={loadReports} title="Refresh">
+            <Button variant="ghost" onClick={loadReports} title={t("common", "refresh")}>
               <RefreshCcw className="h-4 w-4" />
             </Button>
             <Button
@@ -454,13 +455,13 @@ export default function ReportsPage() {
               }}
             >
               <Download className="mr-2 h-4 w-4" />
-              Export Summary CSV
+              {t("common", "export") || "Export"} CSV
             </Button>
           </div>
         </div>
 
         {/* Error / Loading */}
-        {loading && <div className="py-6 text-center text-gray-500 dark:text-gray-300">Loading…</div>}
+        {loading && <div className="py-6 text-center text-gray-500 dark:text-gray-300">{t("common", "loading")}</div>}
         {!!error && !loading && (
           <div className="py-6 text-center text-red-500">{error}</div>
         )}
@@ -470,21 +471,21 @@ export default function ReportsPage() {
           <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div className="rounded-xl border p-4 dark:border-dark-3">
-                <div className="text-sm text-gray-500 dark:text-dark-6">Total Cases</div>
+                <div className="text-sm text-gray-500 dark:text-dark-6">{t("dashboard", "totalCases")}</div>
                 <div className="mt-1 text-2xl font-bold text-[#5750f1]">
                   {summary?.total_cases ?? "—"}
                 </div>
               </div>
               <div className="rounded-xl border p-4 dark:border-dark-3">
-                <div className="text-sm text-gray-500 dark:text-dark-6">Open Cases</div>
+                <div className="text-sm text-gray-500 dark:text-dark-6">{t("cases", "open")}</div>
                 <div className="mt-1 text-2xl font-bold">{summary?.open_cases ?? "—"}</div>
               </div>
               <div className="rounded-xl border p-4 dark:border-dark-3">
-                <div className="text-sm text-gray-500 dark:text-dark-6">Resolved Cases</div>
+                <div className="text-sm text-gray-500 dark:text-dark-6">{t("dashboard", "totalSolvedCases")}</div>
                 <div className="mt-1 text-2xl font-bold">{summary?.resolved_cases ?? "—"}</div>
               </div>
               <div className="rounded-xl border p-4 dark:border-dark-3">
-                <div className="text-sm text-gray-500 dark:text-dark-6">Avg Resolution (days)</div>
+                <div className="text-sm text-gray-500 dark:text-dark-6">{t("common", "avgResolution") || "Avg Resolution"} (days)</div>
                 <div className="mt-1 text-2xl font-bold">
                   {summary?.avg_resolution_days ?? "—"}
                 </div>
@@ -494,21 +495,21 @@ export default function ReportsPage() {
             {/* Status Breakdown */}
             <div className="mt-6 rounded-xl border p-4 dark:border-dark-3">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">By Status</h3>
+                <h3 className="text-lg font-semibold">{t("common", "byStatus") || "By Status"}</h3>
                 <Button
                   variant="outline"
                   onClick={() => exportCsv(byStatus, ["status", "count"], "by_status.csv")}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Export
+                  {t("common", "export")}
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="[&>th]:text-left">
-                    <TableHead>Status</TableHead>
-                    <TableHead>Count</TableHead>
-                    <TableHead>Share</TableHead>
+                    <TableHead>{t("cases", "status")}</TableHead>
+                    <TableHead>{t("common", "count") || "Count"}</TableHead>
+                    <TableHead>{t("common", "share") || "Share"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -526,21 +527,21 @@ export default function ReportsPage() {
             {/* Office Breakdown */}
             <div className="mt-6 rounded-xl border p-4 dark:border-dark-3">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">By Office</h3>
+                <h3 className="text-lg font-semibold">{t("common", "byOffice")}</h3>
                 <Button
                   variant="outline"
                   onClick={() => exportCsv(byOffice, ["office_name", "count"], "by_office.csv")}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Export
+                  {t("common", "export")}
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="[&>th]:text-left">
-                    <TableHead>Office</TableHead>
-                    <TableHead>Count</TableHead>
-                    <TableHead>Share</TableHead>
+                    <TableHead>{t("cases", "office")}</TableHead>
+                    <TableHead>{t("common", "count") || "Count"}</TableHead>
+                    <TableHead>{t("common", "share") || "Share"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -558,21 +559,21 @@ export default function ReportsPage() {
             {/* Category Breakdown */}
             <div className="mt-6 rounded-xl border p-4 dark:border-dark-3">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">By Category</h3>
+                <h3 className="text-lg font-semibold">{t("common", "byCategory")}</h3>
                 <Button
                   variant="outline"
                   onClick={() => exportCsv(byCategory, ["category", "count"], "by_category.csv")}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Export
+                  {t("common", "export")}
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="[&>th]:text-left">
-                    <TableHead>Category</TableHead>
-                    <TableHead>Count</TableHead>
-                    <TableHead>Share</TableHead>
+                    <TableHead>{t("cases", "category")}</TableHead>
+                    <TableHead>{t("common", "count") || "Count"}</TableHead>
+                    <TableHead>{t("common", "share") || "Share"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -590,21 +591,21 @@ export default function ReportsPage() {
             {/* Top Assignees */}
             <div className="mt-6 rounded-xl border p-4 dark:border-dark-3">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Top Assignees (Active Cases)</h3>
+                <h3 className="text-lg font-semibold">{t("common", "topAssignees")}</h3>
                 <Button
                   variant="outline"
                   onClick={() => exportCsv(topAssignees, ["full_name", "active_cases"], "top_assignees.csv")}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Export
+                  {t("common", "export")}
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="[&>th]:text-left">
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>Active Cases</TableHead>
-                    <TableHead>Share</TableHead>
+                    <TableHead>{t("common", "assignee") || "Assignee"}</TableHead>
+                    <TableHead>{t("cases", "activeCases") || "Active Cases"}</TableHead>
+                    <TableHead>{t("common", "share") || "Share"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

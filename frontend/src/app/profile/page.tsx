@@ -8,6 +8,7 @@ import { CameraIcon } from "./_components/icons";
 import { Button } from "@/components/ui/button";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { User, Mail, Phone, MapPin, Building2, Calendar, UserCircle } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type UserData = {
   id: number | string;
@@ -26,6 +27,7 @@ type UserData = {
 };
 
 export default function ProfilePage() {
+  const { t } = useTranslation();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -97,13 +99,13 @@ export default function ProfilePage() {
 
     // Validate file type
     if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
+      setError(t("settings", "selectImageFile") || "Please select an image file");
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setError("Image size must be less than 5MB");
+      setError(t("settings", "imageSizeLimit") || "Image size must be less than 5MB");
       return;
     }
 
@@ -128,7 +130,7 @@ export default function ProfilePage() {
 
       const updated = await res.json();
       setUserData((prev) => (prev ? { ...prev, profile_image_url: updated.profile_image_url } : null));
-      setSuccessMsg("Profile image updated successfully.");
+      setSuccessMsg(t("settings", "profileImageUpdated") || "Profile image updated successfully.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
@@ -142,8 +144,8 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-[970px]">
-        <Breadcrumb pageName="Profile" />
-        <div className="p-6 text-center">Loading profile...</div>
+        <Breadcrumb pageName={t("nav", "profile")} />
+        <div className="p-6 text-center">{t("common", "loading")}</div>
       </div>
     );
   }
@@ -151,7 +153,7 @@ export default function ProfilePage() {
   if (error && !userData) {
     return (
       <div className="mx-auto w-full max-w-[970px]">
-        <Breadcrumb pageName="Profile" />
+        <Breadcrumb pageName={t("nav", "profile")} />
         <div className="p-6 text-center text-red-500">{error}</div>
       </div>
     );
@@ -168,7 +170,7 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto w-full max-w-[970px]">
-      <Breadcrumb pageName="Profile" />
+      <Breadcrumb pageName={t("nav", "profile")} />
 
       <div className="overflow-hidden rounded-[10px] bg-white shadow-1 dark:bg-gray-dark dark:shadow-card">
         {/* Cover Image */}
@@ -180,7 +182,7 @@ export default function ProfilePage() {
               onClick={() => router.push("/pages/settings")}
               className="bg-white/90 hover:bg-white"
             >
-              Edit Profile
+              {t("profile", "editProfile") || "Edit Profile"}
             </Button>
           </div>
         </div>
@@ -201,7 +203,7 @@ export default function ProfilePage() {
               <label
                 htmlFor="profilePhoto"
                 className="absolute bottom-0 right-0 flex size-8.5 cursor-pointer items-center justify-center rounded-full bg-primary text-white hover:bg-opacity-90 sm:bottom-2 sm:right-2"
-                title="Upload profile image"
+                title={t("settings", "uploadProfileImage") || "Upload profile image"}
               >
                 <CameraIcon />
                 <input
@@ -235,7 +237,7 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <UserCircle className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">Username</span>
+                    <span className="text-xs text-gray-500">{t("forms", "username") || "Username"}</span>
                     <p className="font-medium text-dark dark:text-white">{userData.username}</p>
                   </div>
                 </div>
@@ -244,7 +246,7 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <Mail className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">Email</span>
+                    <span className="text-xs text-gray-500">{t("forms", "email")}</span>
                     <p className="font-medium text-dark dark:text-white">{userData.email}</p>
                   </div>
                 </div>
@@ -253,8 +255,8 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <Phone className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">Phone Number</span>
-                    <p className="font-medium text-dark dark:text-white">{userData.phone_number || "Not provided"}</p>
+                    <span className="text-xs text-gray-500">{t("forms", "phone")}</span>
+                    <p className="font-medium text-dark dark:text-white">{userData.phone_number || t("common", "notProvided") || "Not provided"}</p>
                   </div>
                 </div>
               )}
@@ -262,8 +264,8 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <User className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">National ID</span>
-                    <p className="font-medium text-dark dark:text-white">{userData.national_id || "Not provided"}</p>
+                    <span className="text-xs text-gray-500">{t("forms", "nationalId")}</span>
+                    <p className="font-medium text-dark dark:text-white">{userData.national_id || t("common", "notProvided") || "Not provided"}</p>
                   </div>
                 </div>
               )}
@@ -271,9 +273,9 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <Building2 className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">Office</span>
+                    <span className="text-xs text-gray-500">{t("cases", "office")}</span>
                     <p className="font-medium text-dark dark:text-white">
-                      {typeof userData.office === "object" ? userData.office.name : "Not assigned"}
+                      {typeof userData.office === "object" ? userData.office.name : t("common", "notAssigned") || "Not assigned"}
                     </p>
                   </div>
                 </div>
@@ -282,7 +284,7 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 text-left">
                   <Calendar className="h-4 w-4 text-gray-500" />
                   <div>
-                    <span className="text-xs text-gray-500">Member Since</span>
+                    <span className="text-xs text-gray-500">{t("profile", "memberSince") || "Member Since"}</span>
                     <p className="font-medium text-dark dark:text-white">
                       {new Date(userData.created_at).toLocaleDateString("en-US", {
                         year: "numeric",
@@ -297,7 +299,7 @@ export default function ProfilePage() {
                 <div className="flex items-start gap-2 text-left sm:col-span-2">
                   <MapPin className="h-4 w-4 text-gray-500 mt-0.5" />
                   <div className="flex-1">
-                    <span className="text-xs text-gray-500">Address</span>
+                    <span className="text-xs text-gray-500">{t("forms", "address") || "Address"}</span>
                     <p className="font-medium text-dark dark:text-white">{userData.address}</p>
                   </div>
                 </div>
@@ -312,7 +314,7 @@ export default function ProfilePage() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={3000}
       />

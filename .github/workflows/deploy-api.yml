@@ -78,10 +78,17 @@ jobs:
       - name: Set server directory path
         id: set-server-dir
         run: |
-          DEPLOY_PATH="${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com' }}"
-          # Ensure path ends with /
-          if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
-            DEPLOY_PATH="${DEPLOY_PATH}/"
+          # If API_DEPLOY_PATH is set, use it; otherwise deploy to FTP root (empty)
+          # The FTP user already logs into the komi-api.ciroocity.com directory
+          DEPLOY_PATH="${{ secrets.API_DEPLOY_PATH }}"
+          if [ -z "$DEPLOY_PATH" ]; then
+            # Empty means deploy directly to FTP root (where FTP user logs in)
+            DEPLOY_PATH=""
+          else
+            # If path is provided, ensure it ends with /
+            if [[ ! "$DEPLOY_PATH" =~ /$ ]]; then
+              DEPLOY_PATH="${DEPLOY_PATH}/"
+            fi
           fi
           echo "server-dir=${DEPLOY_PATH}" >> $GITHUB_OUTPUT
 
@@ -119,6 +126,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           script: |
-            cd ${{ secrets.API_DEPLOY_PATH || 'komi-api.ciroocity.com' }}
+            cd ${{ secrets.API_DEPLOY_PATH || '.' }}
             source venv/bin/activate || true
             python manage.py migrate --noinput || true

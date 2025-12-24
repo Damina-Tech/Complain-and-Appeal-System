@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { RefreshCcw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 /* ===================== Types ===================== */
 
@@ -122,6 +123,7 @@ const dueIsoOf = (r: AssignmentRecord) => r.due_date || r.countdown_days || null
 /* ===================== Page ===================== */
 
 export default function MyAssignedCasesPage() {
+  const { t } = useTranslation();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const currentUserId =
@@ -312,18 +314,18 @@ export default function MyAssignedCasesPage() {
         {/* Top bar */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
           <Input
-            placeholder="Search case title, reason, or from office…"
+            placeholder={t("common", "search")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-[320px]"
           />
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={loadAssigned} title="Refresh">
+            <Button variant="ghost" onClick={loadAssigned} title={t("common", "refresh")}>
               <RefreshCcw className="h-4 w-4" />
             </Button>
             <Link href="/cases">
               <Button className="bg-blue-600 text-white hover:bg-blue-700">
-                Go to Cases
+                {t("common", "to")} {t("cases", "cases")}
               </Button>
             </Link>
           </div>
@@ -333,11 +335,11 @@ export default function MyAssignedCasesPage() {
         <Table>
           <TableHeader>
             <TableRow className="[&>th]:text-center">
-              <TableHead className="!text-left">Case</TableHead>
-              <TableHead>From (Office)</TableHead>
-              <TableHead>Reason</TableHead>
+              <TableHead className="!text-left">{t("activity", "case")}</TableHead>
+              <TableHead>{t("activity", "fromOffice")}</TableHead>
+              <TableHead>{t("activity", "reason")}</TableHead>
               <TableHead>Deadline</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead>{t("common", "actions")}</TableHead>
             </TableRow>
           </TableHeader>
 
@@ -345,7 +347,7 @@ export default function MyAssignedCasesPage() {
             {loading && (
               <TableRow>
                 <TableCell colSpan={5} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  Loading…
+                  {t("common", "loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -361,7 +363,7 @@ export default function MyAssignedCasesPage() {
             {!loading && !error && filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  No assigned cases found
+                  {t("activity", "noRecordsFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -391,7 +393,7 @@ export default function MyAssignedCasesPage() {
                   <TableCell>
                     {cid ? (
                       <Link href={`/cases/${cid}/view`}>
-                        <Button size="icon" variant="ghost" title="View case">
+                        <Button size="icon" variant="ghost" title={t("common", "view")}>
                           <Eye className="h-4 w-4 text-blue-500" />
                         </Button>
                       </Link>
@@ -411,7 +413,7 @@ export default function MyAssignedCasesPage() {
         {!loading && !error && filtered.length > itemsPerPage && (
           <div className="mt-4 flex items-center justify-between border-t border-stroke pt-4 dark:border-dark-3">
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Showing {startIndex + 1} to {Math.min(endIndex, filtered.length)} of {filtered.length} assignments
+              {t("activity", "showing")} {startIndex + 1} {t("activity", "to")} {Math.min(endIndex, filtered.length)} {t("activity", "of")} {filtered.length} {t("activity", "assignments")}
             </div>
             <div className="flex items-center gap-2">
               <Button

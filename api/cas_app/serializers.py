@@ -331,15 +331,26 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     recipients_offices = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Office.objects.all()
     )
+    delivery_modes = serializers.JSONField(required=False, default=list)
 
     class Meta:
         model = Announcement
         fields = [
-            "id", "title", "content", "is_active",
+            "id", "title", "content", "is_active", "delivery_modes",
             "recipients_groups", "recipients_offices",
             "created_at", "updated_at", "created_by", "updated_by",
         ]
         read_only_fields = ["created_at", "updated_at", "created_by", "updated_by"]
+
+    def validate_delivery_modes(self, value):
+        """Validate delivery modes."""
+        valid_modes = ["in_app", "email", "sms", "whatsapp", "telegram", "all"]
+        if not isinstance(value, list):
+            raise serializers.ValidationError("delivery_modes must be a list")
+        for mode in value:
+            if mode not in valid_modes:
+                raise serializers.ValidationError(f"Invalid delivery mode: {mode}. Valid modes: {', '.join(valid_modes)}")
+        return value
 
 
 class NotificationSerializer(serializers.ModelSerializer):

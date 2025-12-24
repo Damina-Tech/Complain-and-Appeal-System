@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import GoogleSigninButton from "../GoogleSigninButton";
 import SigninWithPassword from "../SigninWithPassword";
@@ -5,7 +7,7 @@ import SigninWithPassword from "../SigninWithPassword";
 export default function Signin() {
   return (
     <>
-      <GoogleSigninButton text="Sign in" />
+      <GoogleSigninButton text="Sign In" />
 
       <div className="my-6 flex items-center justify-center">
         <span className="block h-px w-full bg-stroke dark:bg-dark-3"></span>
@@ -21,7 +23,7 @@ export default function Signin() {
 
       <div className="mt-6 text-center">
         <p>
-          Don’t have any account?{" "}
+          Don't have any account?{" "}
           <Link href="/auth/sign-up" className="text-primary">
             Sign Up
           </Link>

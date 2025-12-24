@@ -13,9 +13,10 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Eye, Pencil, Plus } from "lucide-react";
+import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
+import { useTranslation } from "@/hooks/useTranslation";
 
 
 /* ========= Types ========= */
@@ -74,6 +75,7 @@ const PAGE_SIZE = 10;
 
 /* ========= Page ========= */
 export default function UsersPage() {
+  const { t } = useTranslation();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   // table + filters
@@ -120,12 +122,15 @@ export default function UsersPage() {
   });
   const [editError, setEditError] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserRow | null>(null);
 
   // auth + current user role
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  const currentUserGroups: string[] = useMemo(() => {
+  const [currentUserGroups, setCurrentUserGroups] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
       const raw = localStorage.getItem("user_groups");
@@ -138,7 +143,7 @@ export default function UsersPage() {
     } catch {
       return [];
     }
-  }, []);
+  });
 
   // Check user permissions dynamically
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
@@ -154,9 +159,19 @@ export default function UsersPage() {
         });
         if (res.ok) {
           const data = await res.json();
-          // Permissions are typically not returned in /auth/me, but we can check groups
-          // For now, we'll use group-based logic
+          console.log("User info from /auth/me:", data);
+          
+          // Update user groups if returned from API
+          if (data.user_groups && Array.isArray(data.user_groups)) {
+            const groups = data.user_groups.map((g: string) => g).filter(Boolean);
+            localStorage.setItem("user_groups", JSON.stringify(groups));
+            setCurrentUserGroups(groups);
+            console.log("Updated user groups from API:", groups);
+          }
+          
           setCurrentUserOffice(data.office || null);
+        } else {
+          console.error("Failed to load user info:", res.status, await res.text());
         }
       } catch (e) {
         console.error("Failed to load user info:", e);
@@ -165,14 +180,63 @@ export default function UsersPage() {
     loadUserInfo();
   }, [API_URL, token]);
 
+  const isAdmin = currentUserGroups.includes("Admin");
   const isDirector = currentUserGroups.includes("Director");
   const isMayorOffice = currentUserGroups.includes("Mayor Office");
   const isFocalPerson = currentUserGroups.some((g) => g.includes("Focal Person"));
   
-  // Dynamic permission check: Director and Mayor Office can assign any role
-  // Focal Person can only assign Citizen role
-  const canAssignAnyRole = isDirector || isMayorOffice;
-  const canCreateUser = canAssignAnyRole || isFocalPerson;
+  // Debug: Log current user groups
+  useEffect(() => {
+    if (currentUserGroups.length > 0) {
+      console.log("Current user groups:", currentUserGroups);
+      console.log("isAdmin:", isAdmin, "isDirector:", isDirector, "isMayorOffice:", isMayorOffice, "isFocalPerson:", isFocalPerson);
+    }
+  }, [currentUserGroups, isAdmin, isDirector, isMayorOffice, isFocalPerson]);
+  
+  // Create permissions:
+  // - Admin: Can create users with any role
+  // - Director and Mayor Office: Can only create Focal Person and Citizen
+  // - Focal Person: Cannot create users
+  const canCreateUser = isAdmin || isDirector || isMayorOffice;
+  
+  // Available roles for creation based on current user's role
+  const availableRolesForCreation = useMemo(() => {
+    if (isAdmin) {
+      return roles; // Admin can create any role
+    } else if (isDirector || isMayorOffice) {
+      // Director and Mayor Office can only create Focal Person and Citizen
+      return roles.filter((r) => r === "Focal Person" || r === "Citizen");
+    }
+    return []; // Focal Person cannot create users
+  }, [roles, isAdmin, isDirector, isMayorOffice]);
+  
+  // Permission checks: Admin, Director, and Mayor Office can edit/delete (with hierarchy restrictions)
+  const canEditUser = isAdmin || isDirector || isMayorOffice;
+  const canDeleteUser = isAdmin || isDirector || isMayorOffice;
+  
+  // Helper function to check if a user can edit/delete another user based on hierarchy
+  const canModifyUser = (targetUser: UserRow): boolean => {
+    if (!canEditUser) return false;
+    
+    // Admin can modify everyone (highest level)
+    if (isAdmin) return true;
+    
+    // Get hierarchy levels
+    // Hierarchy: Citizen (1) < Focal Person (2) < Director (3) < Mayor Office (4) < Admin (5)
+    const hierarchyLevels: Record<string, number> = {
+      "Citizen": 1,
+      "Focal Person": 2,
+      "Director": 3,
+      "Mayor Office": 4,
+      "Admin": 5,
+    };
+    
+    const currentUserLevel = isDirector ? 3 : isMayorOffice ? 4 : 0;
+    const targetUserLevel = Math.max(...targetUser.roles.map((r) => hierarchyLevels[r] || 0));
+    
+    // Can only modify users with lower hierarchy level
+    return targetUserLevel < currentUserLevel;
+  };
 
   // ---- Load roles and users ----
   const mapUser = (u: ApiUser): UserRow => {
@@ -228,17 +292,51 @@ export default function UsersPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: "no-store",
       });
-      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
-      const data: ApiUser[] = await res.json();
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMessage = `Failed to load users: ${res.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        console.error("Users API error:", res.status, errorMessage);
+        
+        // If it's a 403 Forbidden, show a more helpful message
+        if (res.status === 403) {
+          errorMessage = "You don't have permission to view users. Only Admin, Director, and Mayor Office roles can access the user list.";
+        }
+        
+        setPageError(errorMessage);
+        setUsers([]); // Clear users on error
+        return;
+      }
+      
+      const responseData = await res.json();
+      console.log("Users API response:", responseData);
+      
+      // Handle paginated response (if API returns { results: [...] })
+      const data: ApiUser[] = Array.isArray(responseData) 
+        ? responseData 
+        : (responseData.results || []);
+      
+      console.log("Parsed users data:", data, "Count:", data.length);
+      
+      if (data.length === 0) {
+        console.warn("API returned empty array. Current user groups:", currentUserGroups);
+        console.warn("Token exists:", !!token);
+      }
+      
       const rows = (Array.isArray(data) ? data : []).map(mapUser);
+      console.log("Mapped user rows:", rows, "Count:", rows.length);
       setUsers(rows);
 
       // default creation role:
       setForm((s) => ({
         ...s,
-        group: canAssignAnyRole
-          ? (namesFrom(rows).includes("Citizen") ? "Citizen" : (roles[0] || "Citizen"))
-          : "Citizen",
+        group: availableRolesForCreation[0] || "Citizen",
       }));
     } catch (err: any) {
       setPageError(err?.message || "Failed to load users/roles");
@@ -334,37 +432,42 @@ export default function UsersPage() {
     const errors: Record<string, string> = {};
     
     if (!form.first_name?.trim()) {
-      errors.first_name = "First name is required";
+      errors.first_name = t("forms", "firstNameRequired");
     }
     
     if (!form.last_name?.trim()) {
-      errors.last_name = "Last name is required";
+      errors.last_name = t("forms", "lastNameRequired");
     }
     
     if (!form.phone_number?.trim()) {
-      errors.phone_number = "Phone number is required";
+      errors.phone_number = t("forms", "phoneRequired");
+    }
+    
+    // Validate role selection if user can create users
+    if (canCreateUser && !form.group?.trim()) {
+      errors.group = t("forms", "roleRequired");
     }
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setFormError("Please fill in all required fields");
+      setFormError(t("forms", "fillRequiredFields"));
       return;
     }
 
     if (!API_URL) {
-      setFormError("NEXT_PUBLIC_API_URL is not set");
+      setFormError(t("common", "error"));
       return;
     }
     if (!token) {
-      setFormError("You are not authenticated. Please sign in.");
+      setFormError(t("common", "error"));
       return;
     }
 
     try {
       setCreating(true);
 
-      // Focal Person can only create Citizen users
-      const assignedRole = canAssignAnyRole ? (form.group || "Citizen") : "Citizen";
+      // Admin, Director, and Mayor Office can assign any role
+      const assignedRole = form.group || availableRolesForCreation[0] || "Citizen";
       
       const payload: Record<string, any> = {
         username: form.email || `${form.first_name.toLowerCase()}_${Date.now()}`, // email as username, or generate one
@@ -476,20 +579,20 @@ export default function UsersPage() {
         } else if (errorData.error) {
           errorMessage = Array.isArray(errorData.error) ? errorData.error[0] : String(errorData.error);
         } else if (Object.keys(newFieldErrors).length > 0) {
-          errorMessage = "Please fix the errors in the form fields";
+          errorMessage = t("forms", "validationError");
         } else {
           errorMessage = typeof errorData === 'string' ? errorData : JSON.stringify(errorData);
         }
 
         if (!errorMessage) {
-          errorMessage = `Create failed (${res.status})`;
+          errorMessage = `${t("common", "error")} (${res.status})`;
         }
 
         // Only show general error if there are no field-specific errors
         if (Object.keys(newFieldErrors).length === 0) {
           setFormError(errorMessage);
         } else {
-          setFormError("Please fix the errors below");
+          setFormError(t("forms", "validationError"));
         }
         
         return;
@@ -504,8 +607,8 @@ export default function UsersPage() {
       setUsers((Array.isArray(rjson) ? rjson : []).map(mapUser));
 
       // success banner for 3s
-      setSuccessTitle("User Created");
-      setSuccessMsg("User created successfully. A reset password email will be sent if configured.");
+      setSuccessTitle(t("users", "userCreated"));
+      setSuccessMsg(t("users", "createUserSuccess"));
       setSuccessOpen(true);        // open success modal
 
       // reset + close
@@ -515,14 +618,60 @@ export default function UsersPage() {
         email: "",
         phone_number: "",
         national_id: "",
-        group: canAssignAnyRole ? (roles[0] || "Citizen") : "Citizen",
+        group: availableRolesForCreation[0] || "Citizen",
       });
       setFieldErrors({});
       setOpenDialog(false);
     } catch (err: any) {
-      setFormError(err?.message || "Failed to create user");
+      setFormError(err?.message || t("common", "error"));
     } finally {
       setCreating(false);
+    }
+  };
+
+  // Helper function to extract human-readable error messages from API responses
+  const extractErrorMessage = async (response: Response): Promise<string> => {
+    try {
+      const responseText = await response.text();
+      let errorData: any = {};
+      
+      try {
+        errorData = JSON.parse(responseText);
+      } catch {
+        errorData = { detail: responseText || response.statusText };
+      }
+      
+      // Extract error message from various possible formats
+      if (errorData.detail) {
+        const detail = Array.isArray(errorData.detail) ? errorData.detail[0] : errorData.detail;
+        // Convert technical messages to user-friendly ones
+        if (typeof detail === "string") {
+          if (detail.includes("cannot edit users with the same or higher hierarchy level")) {
+            return "You cannot edit users with the same or higher role level.";
+          }
+          if (detail.includes("cannot delete users with the same or higher hierarchy level")) {
+            return "You cannot delete users with the same or higher role level.";
+          }
+          if (detail.includes("cannot create users")) {
+            return "You do not have permission to create users.";
+          }
+          // Remove technical details like level numbers for better readability
+          return detail.replace(/Your level: \d+, Target user level: \d+/g, "").trim();
+        }
+        return String(detail);
+      }
+      
+      if (errorData.message) {
+        return Array.isArray(errorData.message) ? errorData.message[0] : String(errorData.message);
+      }
+      
+      if (errorData.error) {
+        return Array.isArray(errorData.error) ? errorData.error[0] : String(errorData.error);
+      }
+      
+      return responseText || response.statusText || t("common", "error");
+    } catch {
+      return t("common", "error");
     }
   };
 
@@ -532,16 +681,16 @@ export default function UsersPage() {
 
     const trimmedEmail = editForm.email.trim();
     if (!trimmedEmail) {
-      setEditError("Email is required.");
+      setEditError(t("forms", "emailRequired"));
       return;
     }
 
     if (!API_URL) {
-      setEditError("NEXT_PUBLIC_API_URL is not set");
+      setEditError(t("common", "error"));
       return;
     }
     if (!token) {
-      setEditError("You are not authenticated. Please sign in.");
+      setEditError(t("common", "error"));
       return;
     }
 
@@ -558,12 +707,16 @@ export default function UsersPage() {
         status: editForm.status || "active",
       };
 
-      if (canAssignAnyRole) {
-        payload.groups = editForm.group ? [editForm.group] : [];
-      } else if (isFocalPerson) {
-        // Focal Person can only assign Citizen role
-        const citizenGroup = roles.find((r) => r === "Citizen");
-        payload.groups = citizenGroup ? [citizenGroup] : [];
+      // Only allow role changes if user has permission and target role is allowed
+      if (canEditUser && selectedUser) {
+        // Check if user can modify this user (hierarchy check)
+        if (canModifyUser(selectedUser)) {
+          // For edit, only Admin can change roles; Director/Mayor Office cannot change roles
+          if (isAdmin && editForm.group) {
+            payload.groups = [editForm.group];
+          }
+          // Director and Mayor Office cannot change roles, so don't include groups in payload
+        }
       }
 
       const res = await fetch(`${API_URL}/users/${selectedUser.id}/`, {
@@ -576,8 +729,9 @@ export default function UsersPage() {
       });
 
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || `Update failed: ${res.status}`);
+        const errorMessage = await extractErrorMessage(res);
+        setEditError(errorMessage);
+        return;
       }
 
       const updated: ApiUser = await res.json();
@@ -585,20 +739,54 @@ export default function UsersPage() {
 
       setUsers((prev) => prev.map((u) => (u.id === mapped.id ? mapped : u)));
       setSelectedUser(mapped);
-      setSuccessTitle("User Updated");
-      setSuccessMsg("User updated successfully.");
+      setSuccessTitle(t("users", "userUpdated"));
+      setSuccessMsg(t("users", "updateUserSuccess"));
       setSuccessOpen(true);
       setEditModalOpen(false);
     } catch (err: any) {
-      setEditError(err?.message || "Failed to update user");
+      setEditError(err?.message || t("common", "error"));
     } finally {
       setUpdating(false);
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!userToDelete || !API_URL || !token) return;
+
+    try {
+      setDeleting(true);
+      setEditError("");
+      
+      const res = await fetch(`${API_URL}/users/${userToDelete.id}/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const errorMessage = await extractErrorMessage(res);
+        setEditError(errorMessage);
+        return;
+      }
+
+      // Remove user from list
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+      setSuccessTitle(t("users", "userDeleted"));
+      setSuccessMsg(t("users", "deleteUserSuccess"));
+      setSuccessOpen(true);
+      setDeleteConfirmOpen(false);
+      setUserToDelete(null);
+    } catch (err: any) {
+      setEditError(err?.message || t("common", "error"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
-      <Breadcrumb pageName="Users" />
+      <Breadcrumb pageName={t("users", "users")} />
 
       {/* Success banner (top, 3s) */}
       {successBanner && (
@@ -624,7 +812,7 @@ export default function UsersPage() {
               >
                 {roleOptions.map((r) => (
                   <option key={r} value={r}>
-                    {r === "all" ? "All Roles" : r}
+                    {r === "all" ? `${t("common", "all")} ${t("users", "roles")}` : r}
                   </option>
                 ))}
               </select>
@@ -639,7 +827,7 @@ export default function UsersPage() {
               >
                 {statusOptions.map((s) => (
                   <option key={s} value={s}>
-                    {s === "all" ? "All Statuses" : s[0].toUpperCase() + s.slice(1)}
+                    {s === "all" ? `${t("common", "all")} ${t("users", "status")}` : s[0].toUpperCase() + s.slice(1)}
                   </option>
                 ))}
               </select>
@@ -647,28 +835,30 @@ export default function UsersPage() {
 
             {/* Search */}
             <Input
-              placeholder="Search name, email, phone, national ID…"
+              placeholder={t("common", "search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-[300px]"
             />
           </div>
 
-          <Button
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            onClick={() => {
-              setFormError("");
-              setOpenDialog(true);
-              // default role when opening the modal
-              setForm((s) => ({
-                ...s,
-                group: canAssignAnyRole ? (s.group || roles[0] || "Citizen") : "Citizen",
-              }));
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add New
-          </Button>
+          {canCreateUser && (
+            <Button
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              onClick={() => {
+                setFormError("");
+                setOpenDialog(true);
+                // default role when opening the modal
+                setForm((s) => ({
+                  ...s,
+                  group: availableRolesForCreation[0] || "Citizen",
+                }));
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              {t("users", "addNewUser")}
+            </Button>
+          )}
         </div>
 
         {/* Table */}
@@ -676,13 +866,13 @@ export default function UsersPage() {
           <TableHeader>
             <TableRow className="[&>th]:text-center">
               {/* Username & Created removed as requested */}
-              <TableHead className="!text-left">Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>National ID</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead className="!text-left">{t("users", "name")}</TableHead>
+              <TableHead>{t("users", "email")}</TableHead>
+              <TableHead>{t("users", "phone")}</TableHead>
+              <TableHead>{t("users", "nationalId")}</TableHead>
+              <TableHead>{t("users", "roles")}</TableHead>
+              <TableHead>{t("users", "status")}</TableHead>
+              <TableHead>{t("common", "actions")}</TableHead>
             </TableRow>
           </TableHeader>
 
@@ -690,7 +880,7 @@ export default function UsersPage() {
             {loading && (
               <TableRow>
                 <TableCell colSpan={7} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  Loading...
+                  {t("common", "loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -706,7 +896,7 @@ export default function UsersPage() {
             {!loading && !pageError && filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  No users found
+                  {t("users", "noUsersFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -742,7 +932,7 @@ export default function UsersPage() {
                           setSelectedUser(u);
                           setViewModalOpen(true);
                         }}
-                        title="View"
+                        title={t("common", "view")}
                       >
                         <Eye className="h-4 w-4 text-blue-500" />
                       </Button>
@@ -763,9 +953,38 @@ export default function UsersPage() {
                           setEditError("");
                           setEditModalOpen(true);
                         }}
-                        title="Edit"
+                        disabled={!canModifyUser(u)}
+                        title={
+                          canModifyUser(u)
+                            ? t("common", "edit")
+                            : "You cannot edit users with the same or higher role level"
+                        }
                       >
-                        <Pencil className="h-4 w-4 text-green-500" />
+                        <Pencil
+                          className={`h-4 w-4 ${
+                            canModifyUser(u) ? "text-green-500" : "text-gray-400"
+                          }`}
+                        />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          setUserToDelete(u);
+                          setDeleteConfirmOpen(true);
+                        }}
+                        disabled={!canModifyUser(u)}
+                        title={
+                          canModifyUser(u)
+                            ? t("common", "delete")
+                            : "You cannot delete users with the same or higher role level"
+                        }
+                      >
+                        <Trash2
+                          className={`h-4 w-4 ${
+                            canModifyUser(u) ? "text-red-500" : "text-gray-400"
+                          }`}
+                        />
                       </Button>
                     </div>
                   </TableCell>
@@ -778,7 +997,7 @@ export default function UsersPage() {
       {!loading && !pageError && filtered.length > PAGE_SIZE && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            Showing {startItem.toLocaleString()}-{endItem.toLocaleString()} of{" "}
+            {t("activity", "showing")} {startItem.toLocaleString()}-{endItem.toLocaleString()} {t("activity", "of")}{" "}
             {filtered.length.toLocaleString()}
           </p>
           <div className="flex items-center gap-2">
@@ -788,10 +1007,10 @@ export default function UsersPage() {
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
             >
-              Previous
+              {t("common", "previous")}
             </Button>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              Page {currentPage} of {totalPages}
+              {t("common", "page")} {currentPage} {t("activity", "of")} {totalPages}
             </span>
             <Button
               variant="outline"
@@ -799,7 +1018,7 @@ export default function UsersPage() {
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
             >
-              Next
+              {t("common", "next")}
             </Button>
           </div>
         </div>
@@ -813,7 +1032,7 @@ export default function UsersPage() {
           setFormError("");
           setFieldErrors({});
         }}
-        title="Add New User"
+        title={t("users", "addNewUser")}
       >
         <form className="space-y-4" onSubmit={handleCreate}>
           {/* General error message at top */}
@@ -822,7 +1041,7 @@ export default function UsersPage() {
               <div className="flex items-start gap-2">
                 <span className="mt-0.5 text-red-600 dark:text-red-400">⚠</span>
                 <div>
-                  <p className="font-medium">Validation Error</p>
+                  <p className="font-medium">{t("common", "error")}</p>
                   <p className="mt-1">{formError}</p>
                 </div>
               </div>
@@ -832,7 +1051,7 @@ export default function UsersPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Input
-                placeholder="First name *"
+                placeholder={`${t("forms", "firstName")} *`}
                 value={form.first_name}
                 onChange={(e) => {
                   setForm((s) => ({ ...s, first_name: e.target.value }));
@@ -853,7 +1072,7 @@ export default function UsersPage() {
             </div>
             <div>
               <Input
-                placeholder="Last name *"
+                placeholder={`${t("forms", "lastName")} *`}
                 value={form.last_name}
                 onChange={(e) => {
                   setForm((s) => ({ ...s, last_name: e.target.value }));
@@ -877,7 +1096,7 @@ export default function UsersPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Input
-                placeholder="Email (optional)"
+                placeholder={`${t("forms", "email")} (${t("common", "optional")})`}
                 type="email"
                 value={form.email}
                 onChange={(e) => {
@@ -898,7 +1117,7 @@ export default function UsersPage() {
             </div>
             <div>
               <Input
-                placeholder="Phone number *"
+                placeholder={`${t("forms", "phone")} *`}
                 value={form.phone_number}
                 onChange={(e) => {
                   setForm((s) => ({ ...s, phone_number: e.target.value }));
@@ -922,7 +1141,7 @@ export default function UsersPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Input
-                placeholder="National ID (optional)"
+                placeholder={`${t("forms", "nationalId")} (${t("common", "optional")})`}
                 value={form.national_id}
                 onChange={(e) => {
                   setForm((s) => ({ ...s, national_id: e.target.value }));
@@ -941,23 +1160,37 @@ export default function UsersPage() {
               )}
             </div>
 
-            {/* Role: Citizen for non-directors; dropdown for Director */}
-            {canAssignAnyRole ? (
-              <select
-                className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
-                value={form.group}
-                onChange={(e) => setForm((s) => ({ ...s, group: e.target.value }))}
-              >
-                {roles.length === 0 ? (
-                  <option value="">No roles</option>
-                ) : (
-                  roles.map((r) => (
+            {/* Role selection based on permissions */}
+            {canCreateUser ? (
+              <div>
+                <select
+                  className={`w-full rounded border p-2 dark:border-dark-3 dark:bg-dark-2 ${
+                    fieldErrors.group ? "border-red-500" : "border-gray-300"
+                  }`}
+                  value={form.group}
+                  onChange={(e) => {
+                    setForm((s) => ({ ...s, group: e.target.value }));
+                    if (fieldErrors.group) {
+                      setFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.group;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  required
+                >
+                  <option value="">{t("common", "select")} {t("users", "role")}</option>
+                  {availableRolesForCreation.map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>
-                  ))
+                  ))}
+                </select>
+                {fieldErrors.group && (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.group}</p>
                 )}
-              </select>
+              </div>
             ) : (
               <Input value="Citizen" readOnly className="opacity-80" />
             )}
@@ -968,7 +1201,7 @@ export default function UsersPage() {
             className="w-full bg-blue-600 text-white hover:bg-blue-700"
             disabled={creating}
           >
-            {creating ? "Creating..." : "Create User"}
+            {creating ? t("common", "loading") : t("users", "addNewUser")}
           </Button>
         </form>
       </AnimatedModal>
@@ -980,13 +1213,13 @@ export default function UsersPage() {
           setViewModalOpen(false);
           setSelectedUser(null);
         }}
-        title="User Details"
+        title={t("users", "viewUser")}
       >
         {selectedUser && (
           <div className="space-y-4 text-sm">
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Name
+                {t("users", "name")}
               </p>
               <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
                 {selectedUser.name}
@@ -995,13 +1228,13 @@ export default function UsersPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Email
+                  {t("users", "email")}
                 </p>
                 <p className="font-medium">{selectedUser.email}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Phone
+                  {t("users", "phone")}
                 </p>
                 <p className="font-medium">{selectedUser.phone}</p>
               </div>
@@ -1009,13 +1242,13 @@ export default function UsersPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  National ID
+                  {t("users", "nationalId")}
                 </p>
                 <p className="font-medium">{selectedUser.nationalId}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Status
+                  {t("users", "status")}
                 </p>
                 <span
                   className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
@@ -1028,7 +1261,7 @@ export default function UsersPage() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Roles
+                {t("users", "roles")}
               </p>
               <p className="font-medium">
                 {selectedUser.roles.length ? selectedUser.roles.join(", ") : "—"}
@@ -1046,13 +1279,13 @@ export default function UsersPage() {
           setEditError("");
           setSelectedUser(null);
         }}
-        title="Edit User"
+        title={t("users", "editUser")}
       >
         {selectedUser && (
           <form className="space-y-4" onSubmit={handleUpdateUser}>
             <div className="grid gap-3 md:grid-cols-2">
               <Input
-                placeholder="First name"
+                placeholder={t("forms", "firstName")}
                 value={editForm.first_name}
                 onChange={(e) =>
                   setEditForm((s) => ({ ...s, first_name: e.target.value }))
@@ -1060,7 +1293,7 @@ export default function UsersPage() {
                 disabled={updating}
               />
               <Input
-                placeholder="Last name"
+                placeholder={t("forms", "lastName")}
                 value={editForm.last_name}
                 onChange={(e) =>
                   setEditForm((s) => ({ ...s, last_name: e.target.value }))
@@ -1070,7 +1303,7 @@ export default function UsersPage() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Input
-                placeholder="Email"
+                placeholder={t("forms", "email")}
                 type="email"
                 value={editForm.email}
                 onChange={(e) =>
@@ -1080,7 +1313,7 @@ export default function UsersPage() {
                 required
               />
               <Input
-                placeholder="Phone number"
+                placeholder={t("forms", "phone")}
                 value={editForm.phone_number}
                 onChange={(e) =>
                   setEditForm((s) => ({ ...s, phone_number: e.target.value }))
@@ -1090,7 +1323,7 @@ export default function UsersPage() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Input
-                placeholder="National ID"
+                placeholder={t("forms", "nationalId")}
                 value={editForm.national_id}
                 onChange={(e) =>
                   setEditForm((s) => ({ ...s, national_id: e.target.value }))
@@ -1099,7 +1332,7 @@ export default function UsersPage() {
               />
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Status
+                  {t("users", "status")}
                 </label>
                 <select
                   className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
@@ -1117,11 +1350,11 @@ export default function UsersPage() {
                 </select>
               </div>
             </div>
-            {canAssignAnyRole ? (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Role
-                </label>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                {t("users", "role")}
+              </label>
+              {isAdmin ? (
                 <select
                   className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
                   value={editForm.group}
@@ -1130,22 +1363,17 @@ export default function UsersPage() {
                   }
                   disabled={updating}
                 >
-                  <option value="">No role</option>
+                  <option value="">{t("common", "none")}</option>
                   {roles.map((role) => (
                     <option key={role} value={role}>
                       {role}
                     </option>
                   ))}
                 </select>
-              </div>
-            ) : (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Role
-                </label>
+              ) : (
                 <Input value={selectedUser.roles.join(", ")} readOnly />
-              </div>
-            )}
+              )}
+            </div>
             {editError && <div className="text-sm text-red-500">{editError}</div>}
             <div className="flex justify-end gap-3">
               <Button
@@ -1158,23 +1386,68 @@ export default function UsersPage() {
                 }}
                 disabled={updating}
               >
-                Cancel
+                {t("common", "cancel")}
               </Button>
               <Button type="submit" className="bg-blue-600 text-white" disabled={updating}>
-                {updating ? "Saving..." : "Save Changes"}
+                {updating ? t("common", "loading") : t("common", "save")}
               </Button>
             </div>
           </form>
         )}
       </AnimatedModal>
+      {/* Delete Confirmation Modal */}
+      <AnimatedModal
+        open={deleteConfirmOpen}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setUserToDelete(null);
+          setEditError("");
+        }}
+        title={t("users", "deleteUser")}
+      >
+        {userToDelete && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {t("users", "deleteUserConfirm").replace("{name}", userToDelete.name)}
+            </p>
+            {editError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                {editError}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setUserToDelete(null);
+                  setEditError("");
+                }}
+                disabled={deleting}
+              >
+                {t("common", "cancel")}
+              </Button>
+              <Button
+                type="button"
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={handleDeleteUser}
+                disabled={deleting}
+              >
+                {deleting ? t("common", "loading") : t("common", "delete")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </AnimatedModal>
+
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
         title={successTitle}
         message={successMsg}
         autoCloseMs={6000}
-    />
-
+      />
     </>
   );
 }

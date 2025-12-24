@@ -12,6 +12,7 @@ import {
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { Plus, Settings, RefreshCcw } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 /* ===================== Types (aligned with your model) ===================== */
 
@@ -37,6 +38,7 @@ type CreateForm = {
   audienceType: "roles" | "offices";
   groupIds: (string | number)[];    // <- send group IDs
   officeIds: (string | number)[];   // <- send office IDs
+  deliveryModes: string[];          // <- delivery channels
 };
 
 type EditForm = {
@@ -45,11 +47,12 @@ type EditForm = {
   audienceType: "roles" | "offices";
   groupIds: (string | number)[];
   officeIds: (string | number)[];
+  deliveryModes: string[];
 };
 
 /* ===================== Helpers ===================== */
 
-const allowedToManage = new Set(["Director", "President Office", "President"]);
+const allowedToManage = new Set(["Admin", "Director", "Mayor Office"]);
 
 const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise<T[]> => {
   let next: string | null = url;
@@ -92,6 +95,7 @@ function toNames(
 
 export default function AnnouncementsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const role  = typeof window !== "undefined" ? localStorage.getItem("role")  : null;
@@ -134,6 +138,7 @@ export default function AnnouncementsPage() {
     audienceType: "roles",
     groupIds: [],
     officeIds: [],
+    deliveryModes: ["in_app"], // Default to in-app only
   });
 
   // Manage (edit/delete)
@@ -148,6 +153,7 @@ export default function AnnouncementsPage() {
     audienceType: "roles",
     groupIds: [],
     officeIds: [],
+    deliveryModes: ["in_app"],
   });
 
   // Success
@@ -204,24 +210,24 @@ export default function AnnouncementsPage() {
   /* ---------- Create ---------- */
 
   const resetCreate = () =>
-    setCreateForm({ title: "", content: "", audienceType: "roles", groupIds: [], officeIds: [] });
+    setCreateForm({ title: "", content: "", audienceType: "roles", groupIds: [], officeIds: [], deliveryModes: ["in_app"] });
 
   const submitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!API_URL) return setCreateError("API URL not set");
-    if (!token)   return setCreateError("You are not authenticated.");
-    if (!canManage) return setCreateError("You do not have permission.");
-    if (!createForm.title.trim())   return setCreateError("Title is required.");
-    if (!createForm.content.trim()) return setCreateError("Content is required.");
+    if (!API_URL) return setCreateError(t("announcements", "apiUrlNotSet"));
+    if (!token)   return setCreateError(t("announcements", "notAuthenticated"));
+    if (!canManage) return setCreateError(t("announcements", "noPermission"));
+    if (!createForm.title.trim())   return setCreateError(t("announcements", "titleRequired"));
+    if (!createForm.content.trim()) return setCreateError(t("announcements", "contentRequired"));
 
     const usingRoles = createForm.audienceType === "roles";
     const recipients_groups  = usingRoles ? createForm.groupIds  : [];
     const recipients_offices = usingRoles ? []                   : createForm.officeIds;
 
     if (usingRoles && recipients_groups.length === 0)
-      return setCreateError("Select at least one role.");
+      return setCreateError(t("announcements", "selectAtLeastOneRole"));
     if (!usingRoles && recipients_offices.length === 0)
-      return setCreateError("Select at least one office.");
+      return setCreateError(t("announcements", "selectAtLeastOneOffice"));
 
     const payload = {
       title: createForm.title.trim(),
@@ -229,6 +235,7 @@ export default function AnnouncementsPage() {
       is_active: true,
       recipients_groups,
       recipients_offices,
+      delivery_modes: createForm.deliveryModes.length > 0 ? createForm.deliveryModes : ["in_app"],
     };
 
     try {
@@ -245,11 +252,11 @@ export default function AnnouncementsPage() {
       setOpenCreate(false);
       resetCreate();
       await loadAnnouncements();
-      setSuccessMsg("Announcement created successfully.");
+      setSuccessMsg(t("announcements", "announcementCreated"));
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
-      setCreateError(e?.message || "Failed to create announcement");
+      setCreateError(e?.message || t("common", "error"));
     } finally {
       setCreating(false);
     }
@@ -275,6 +282,7 @@ export default function AnnouncementsPage() {
       audienceType,
       groupIds: groupsFromRow as (string | number)[],
       officeIds: officesFromRow as (string | number)[],
+      deliveryModes: (row as any).delivery_modes || ["in_app"],
     });
 
     setEditError("");
@@ -286,10 +294,10 @@ export default function AnnouncementsPage() {
   const submitSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!API_URL || !selected) return;
-    if (!token) return setEditError("You are not authenticated.");
-    if (!canManage) return setEditError("You do not have permission.");
-    if (!editForm.title.trim())   return setEditError("Title is required.");
-    if (!editForm.content.trim()) return setEditError("Content is required.");
+    if (!token) return setEditError(t("announcements", "notAuthenticated"));
+    if (!canManage) return setEditError(t("announcements", "noPermission"));
+    if (!editForm.title.trim())   return setEditError(t("announcements", "titleRequired"));
+    if (!editForm.content.trim()) return setEditError(t("announcements", "contentRequired"));
 
     const usingRoles = editForm.audienceType === "roles";
     const payload = {
@@ -297,6 +305,7 @@ export default function AnnouncementsPage() {
       content: editForm.content.trim(),
       recipients_groups:  usingRoles ? editForm.groupIds  : [],
       recipients_offices: usingRoles ? []                  : editForm.officeIds,
+      delivery_modes: editForm.deliveryModes.length > 0 ? editForm.deliveryModes : ["in_app"],
     };
 
     try {
@@ -312,11 +321,11 @@ export default function AnnouncementsPage() {
       }
       setOpenManage(false);
       await loadAnnouncements();
-      setSuccessMsg("Announcement updated successfully.");
+      setSuccessMsg(t("announcements", "announcementUpdated"));
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
-      setEditError(e?.message || "Failed to update announcement");
+      setEditError(e?.message || t("common", "error"));
     } finally {
       setSaving(false);
     }
@@ -324,8 +333,8 @@ export default function AnnouncementsPage() {
 
   const handleDelete = async () => {
     if (!API_URL || !selected) return;
-    if (!token) return setEditError("You are not authenticated.");
-    if (!canManage) return setEditError("You do not have permission.");
+    if (!token) return setEditError(t("announcements", "notAuthenticated"));
+    if (!canManage) return setEditError(t("announcements", "noPermission"));
     try {
       setDeleting(true);
       const res = await fetch(`${API_URL}/announcements/${selected.id}/`, {
@@ -338,11 +347,11 @@ export default function AnnouncementsPage() {
       }
       setOpenManage(false);
       await loadAnnouncements();
-      setSuccessMsg("Announcement deleted successfully.");
+      setSuccessMsg(t("announcements", "announcementDeleted"));
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (e: any) {
-      setEditError(e?.message || "Failed to delete announcement");
+      setEditError(e?.message || t("common", "error"));
     } finally {
       setDeleting(false);
     }
@@ -352,19 +361,19 @@ export default function AnnouncementsPage() {
 
   return (
     <>
-      <Breadcrumb pageName="Announcements" />
+      <Breadcrumb pageName={t("announcements", "title")} />
 
       <div className={cn("rounded-[10px] bg-white p-5 shadow-1 dark:bg-gray-dark dark:shadow-card")}>
         {/* Top bar */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Input
-              placeholder="Search title or content…"
+              placeholder={t("announcements", "searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-[300px]"
             />
-            <Button variant="ghost" onClick={loadAnnouncements} title="Refresh">
+            <Button variant="ghost" onClick={loadAnnouncements} title={t("announcements", "refresh")}>
               <RefreshCcw className="h-4 w-4" />
             </Button>
           </div>
@@ -379,7 +388,7 @@ export default function AnnouncementsPage() {
               }}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add New
+              {t("announcements", "addNew")}
             </Button>
           )}
         </div>
@@ -388,17 +397,17 @@ export default function AnnouncementsPage() {
         <Table>
           <TableHeader>
             <TableRow className="[&>th]:text-center">
-              <TableHead className="!text-left">Title</TableHead>
-              <TableHead>Audience</TableHead>
-              <TableHead>Date</TableHead>
-              {canManage && <TableHead>Action</TableHead>}
+              <TableHead className="!text-left">{t("announcements", "titleLabel")}</TableHead>
+              <TableHead>{t("announcements", "audience")}</TableHead>
+              <TableHead>{t("announcements", "date")}</TableHead>
+              {canManage && <TableHead>{t("announcements", "action")}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
               <TableRow>
                 <TableCell colSpan={canManage ? 4 : 3} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  Loading…
+                  {t("announcements", "loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -414,7 +423,7 @@ export default function AnnouncementsPage() {
             {!loading && !error && filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={canManage ? 4 : 3} className="py-4 text-center text-gray-500 dark:text-gray-300">
-                  No announcements found
+                  {t("announcements", "noAnnouncementsFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -425,8 +434,8 @@ export default function AnnouncementsPage() {
               const officeNames = toNames(a.recipients_offices  as any, officeMap);
 
               const audienceStr =
-                roleNames.length   > 0 ? `Roles: ${roleNames.join(", ")}`
-              : officeNames.length > 0 ? `Offices: ${officeNames.join(", ")}`
+                roleNames.length   > 0 ? `${t("announcements", "roles")}: ${roleNames.join(", ")}`
+              : officeNames.length > 0 ? `${t("announcements", "offices")}: ${officeNames.join(", ")}`
               : "—";
 
               return (
@@ -448,10 +457,10 @@ export default function AnnouncementsPage() {
                         size="sm"
                         className="mx-auto flex items-center gap-2"
                         onClick={() => openManageModal(a)}
-                        title="Manage"
+                        title={t("announcements", "manage")}
                       >
                         <Settings className="h-4 w-4 text-blue-600" />
-                        Manage
+                        {t("announcements", "manage")}
                       </Button>
                     </TableCell>
                   )}
@@ -466,15 +475,15 @@ export default function AnnouncementsPage() {
       <AnimatedModal
         open={openCreate}
         onClose={() => setOpenCreate(false)}
-        title="Create Announcement"
+        title={t("announcements", "createAnnouncement")}
         maxWidthClassName="max-w-xl"
       >
         {!canManage ? (
-          <div className="text-sm text-gray-500">You do not have permission.</div>
+          <div className="text-sm text-gray-500">{t("announcements", "noPermission")}</div>
         ) : (
           <form className="space-y-4" onSubmit={submitCreate}>
             <Input
-              placeholder="Title *"
+              placeholder={`${t("announcements", "titleLabel")} *`}
               value={createForm.title}
               onChange={(e) => setCreateForm((s) => ({ ...s, title: e.target.value }))}
               required
@@ -482,7 +491,7 @@ export default function AnnouncementsPage() {
             <textarea
               className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
               rows={5}
-              placeholder="Content *"
+              placeholder={`${t("announcements", "contentLabel")} *`}
               value={createForm.content}
               onChange={(e) => setCreateForm((s) => ({ ...s, content: e.target.value }))}
               required
@@ -497,7 +506,7 @@ export default function AnnouncementsPage() {
                   checked={createForm.audienceType === "roles"}
                   onChange={() => setCreateForm((s) => ({ ...s, audienceType: "roles", officeIds: [] }))}
                 />
-                Roles
+                {t("announcements", "roles")}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -506,16 +515,16 @@ export default function AnnouncementsPage() {
                   checked={createForm.audienceType === "offices"}
                   onChange={() => setCreateForm((s) => ({ ...s, audienceType: "offices", groupIds: [] }))}
                 />
-                Offices
+                {t("announcements", "offices")}
               </label>
             </div>
 
             {createForm.audienceType === "roles" ? (
               <div>
-                <div className="mb-1 text-sm font-medium">Select Roles</div>
+                <div className="mb-1 text-sm font-medium">{t("announcements", "selectRoles")}</div>
                 <div className="max-h-40 overflow-auto rounded border p-2 dark:border-dark-3">
                   {groups.length === 0 ? (
-                    <div className="text-sm text-gray-500">No roles found.</div>
+                    <div className="text-sm text-gray-500">{t("users", "noUsersFound")}</div>
                   ) : (
                     groups.map((g) => (
                       <label key={String(g.id)} className="flex items-center gap-2 py-1 text-sm">
@@ -568,6 +577,52 @@ export default function AnnouncementsPage() {
               </div>
             )}
 
+            {/* Delivery Mode Selection */}
+            <div>
+              <div className="mb-1 text-sm font-medium">Delivery Channels *</div>
+              <div className="space-y-2 rounded border p-3 dark:border-dark-3">
+                {[
+                  { value: "in_app", label: "In-App Notification" },
+                  { value: "email", label: "Email" },
+                  { value: "sms", label: "SMS" },
+                  { value: "whatsapp", label: "WhatsApp" },
+                  { value: "telegram", label: "Telegram" },
+                  { value: "all", label: "All Channels" },
+                ].map((mode) => (
+                  <label key={mode.value} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={createForm.deliveryModes.includes(mode.value)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setCreateForm((s) => {
+                          if (mode.value === "all") {
+                            // If "all" is selected, replace all modes
+                            return {
+                              ...s,
+                              deliveryModes: checked
+                                ? ["all"]
+                                : s.deliveryModes.filter((m) => m !== "all"),
+                            };
+                          }
+                          // If "all" is currently selected and user selects another mode, remove "all"
+                          let newModes = checked
+                            ? [...s.deliveryModes.filter((m) => m !== "all"), mode.value]
+                            : s.deliveryModes.filter((m) => m !== mode.value);
+                          // Ensure at least one mode is selected
+                          if (newModes.length === 0) {
+                            newModes = ["in_app"];
+                          }
+                          return { ...s, deliveryModes: newModes };
+                        });
+                      }}
+                    />
+                    {mode.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {createError && <div className="text-sm text-red-500">{createError}</div>}
 
             <Button
@@ -575,7 +630,7 @@ export default function AnnouncementsPage() {
               className="w-full bg-blue-600 text-white hover:bg-blue-700"
               disabled={creating}
             >
-              {creating ? "Creating..." : "Create"}
+              {creating ? t("announcements", "creating") : t("announcements", "create")}
             </Button>
           </form>
         )}
@@ -585,17 +640,17 @@ export default function AnnouncementsPage() {
       <AnimatedModal
         open={openManage}
         onClose={() => setOpenManage(false)}
-        title={selected ? `Manage: ${selected.title}` : "Manage Announcement"}
+        title={selected ? `${t("announcements", "manageAnnouncement")}: ${selected.title}` : t("announcements", "manageAnnouncement")}
         maxWidthClassName="max-w-xl"
       >
         {!canManage ? (
-          <div className="text-sm text-gray-500">You do not have permission.</div>
+          <div className="text-sm text-gray-500">{t("announcements", "noPermission")}</div>
         ) : !selected ? (
-          <div className="text-sm text-gray-500">No announcement selected.</div>
+          <div className="text-sm text-gray-500">{t("common", "none")}</div>
         ) : (
           <form className="space-y-4" onSubmit={submitSave}>
             <Input
-              placeholder="Title *"
+              placeholder={`${t("announcements", "titleLabel")} *`}
               value={editForm.title}
               onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))}
               required
@@ -603,7 +658,7 @@ export default function AnnouncementsPage() {
             <textarea
               className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
               rows={5}
-              placeholder="Content *"
+              placeholder={`${t("announcements", "contentLabel")} *`}
               value={editForm.content}
               onChange={(e) => setEditForm((s) => ({ ...s, content: e.target.value }))}
               required
@@ -618,7 +673,7 @@ export default function AnnouncementsPage() {
                   checked={editForm.audienceType === "roles"}
                   onChange={() => setEditForm((s) => ({ ...s, audienceType: "roles", officeIds: [] }))}
                 />
-                Roles
+                {t("announcements", "roles")}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -627,17 +682,17 @@ export default function AnnouncementsPage() {
                   checked={editForm.audienceType === "offices"}
                   onChange={() => setEditForm((s) => ({ ...s, audienceType: "offices", groupIds: [] }))}
                 />
-                Offices
+                {t("announcements", "offices")}
               </label>
             </div>
 
             {/* Show the current audience as names (readable) */}
             <div className="rounded border p-3 text-xs dark:border-dark-3">
-              <div className="font-medium mb-1">Current Audience</div>
+              <div className="font-medium mb-1">{t("announcements", "currentAudience")}</div>
               <div className="space-y-1">
                 {editForm.audienceType === "roles" ? (
                   <div>
-                    Roles:&nbsp;
+                    {t("announcements", "roles")}:&nbsp;
                     {toNames(
                       (selected.recipients_groups || []).map((g) =>
                         typeof g === "object" ? (g as ApiGroup).id : g
@@ -647,7 +702,7 @@ export default function AnnouncementsPage() {
                   </div>
                 ) : (
                   <div>
-                    Offices:&nbsp;
+                    {t("announcements", "offices")}:&nbsp;
                     {toNames(
                       (selected.recipients_offices || []).map((o) =>
                         typeof o === "object" ? (o as ApiOffice).id : o
@@ -662,10 +717,10 @@ export default function AnnouncementsPage() {
             {/* Editable audience pickers */}
             {editForm.audienceType === "roles" ? (
               <div>
-                <div className="mb-1 text-sm font-medium">Select Roles</div>
+                <div className="mb-1 text-sm font-medium">{t("announcements", "selectRoles")}</div>
                 <div className="max-h-40 overflow-auto rounded border p-2 dark:border-dark-3">
                   {groups.length === 0 ? (
-                    <div className="text-sm text-gray-500">No roles found.</div>
+                    <div className="text-sm text-gray-500">{t("common", "none")}</div>
                   ) : (
                     groups.map((g) => (
                       <label key={String(g.id)} className="flex items-center gap-2 py-1 text-sm">
@@ -718,6 +773,49 @@ export default function AnnouncementsPage() {
               </div>
             )}
 
+            {/* Delivery Mode Selection */}
+            <div>
+              <div className="mb-1 text-sm font-medium">Delivery Channels *</div>
+              <div className="space-y-2 rounded border p-3 dark:border-dark-3">
+                {[
+                  { value: "in_app", label: "In-App Notification" },
+                  { value: "email", label: "Email" },
+                  { value: "sms", label: "SMS" },
+                  { value: "whatsapp", label: "WhatsApp" },
+                  { value: "telegram", label: "Telegram" },
+                  { value: "all", label: "All Channels" },
+                ].map((mode) => (
+                  <label key={mode.value} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editForm.deliveryModes.includes(mode.value)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEditForm((s) => {
+                          if (mode.value === "all") {
+                            return {
+                              ...s,
+                              deliveryModes: checked
+                                ? ["all"]
+                                : s.deliveryModes.filter((m) => m !== "all"),
+                            };
+                          }
+                          let newModes = checked
+                            ? [...s.deliveryModes.filter((m) => m !== "all"), mode.value]
+                            : s.deliveryModes.filter((m) => m !== mode.value);
+                          if (newModes.length === 0) {
+                            newModes = ["in_app"];
+                          }
+                          return { ...s, deliveryModes: newModes };
+                        });
+                      }}
+                    />
+                    {mode.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {editError && <div className="text-sm text-red-500">{editError}</div>}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -727,7 +825,7 @@ export default function AnnouncementsPage() {
                   className="bg-blue-600 text-white hover:bg-blue-700"
                   disabled={saving}
                 >
-                  {saving ? "Saving..." : "Save Changes"}
+                  {saving ? t("announcements", "saving") : t("announcements", "saveChanges")}
                 </Button>
 
                 <Button
@@ -736,12 +834,12 @@ export default function AnnouncementsPage() {
                   onClick={handleDelete}
                   disabled={deleting}
                 >
-                  {deleting ? "Deleting..." : "Delete"}
+                  {deleting ? t("announcements", "deleting") : t("announcements", "delete")}
                 </Button>
               </div>
 
               <div className="text-xs text-gray-500 dark:text-dark-6">
-                Created: {selected?.created_at ? String(selected.created_at).slice(0, 10) : "—"}
+                {t("announcements", "created")}: {selected?.created_at ? String(selected.created_at).slice(0, 10) : "—"}
               </div>
             </div>
           </form>
@@ -752,7 +850,7 @@ export default function AnnouncementsPage() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
+        title={t("common", "success")}
         message={successMsg}
         autoCloseMs={3000}
       />

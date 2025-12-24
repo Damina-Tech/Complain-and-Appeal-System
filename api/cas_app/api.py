@@ -22,6 +22,28 @@ class IsSelfOrStaff(permissions.BasePermission):
         return request.user.is_authenticated and obj.pk == request.user.pk
 
 
+class CanEditUsers(permissions.BasePermission):
+    """Allow Admin, Director, and Mayor Office to edit users (hierarchy checks done in perform_update)."""
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        # Staff/superuser can always edit
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        # Users can always edit themselves
+        if obj.pk == request.user.pk:
+            return True
+        # Check for Admin, Director, or Mayor Office group membership
+        user_groups = [g.name for g in request.user.groups.all()]
+        if "Admin" in user_groups or "Director" in user_groups or "Mayor Office" in user_groups:
+            return True
+        # Check hierarchy level dynamically
+        user_hierarchy = get_user_role_hierarchy(request.user)
+        if user_hierarchy and user_hierarchy.hierarchy_level >= 3:
+            return True
+        return False
+
+
 class IsDirectorOrAdmin(permissions.BasePermission):
     """Allow users with hierarchy level >= Director level or Admin users to access."""
     def has_permission(self, request, view):
@@ -30,15 +52,28 @@ class IsDirectorOrAdmin(permissions.BasePermission):
         # Admin users (staff/superuser)
         if request.user.is_staff or request.user.is_superuser:
             return True
+        # Check for Admin, Director, or Mayor Office group membership
+        user_groups = [g.name for g in request.user.groups.all()]
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"IsDirectorOrAdmin.has_permission - User: {request.user.username}, Groups: {user_groups}")
+        
+        if "Admin" in user_groups or "Director" in user_groups or "Mayor Office" in user_groups:
+            logger.info(f"IsDirectorOrAdmin.has_permission - User {request.user.username} has Admin/Director/Mayor Office group. Allowing access.")
+            return True
         # Check hierarchy level dynamically (Director level is 3, Mayor Office is 4)
         user_hierarchy = get_user_role_hierarchy(request.user)
         if user_hierarchy and user_hierarchy.hierarchy_level >= 3:
+            logger.info(f"IsDirectorOrAdmin.has_permission - User {request.user.username} has hierarchy level >= 3. Allowing access.")
             return True
+        logger.warning(f"IsDirectorOrAdmin.has_permission - User {request.user.username} does not have permission. Denying access.")
         return False
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by("-id")
+    queryset = User.objects.select_related('office', 'added_by', 'status_changed_by').prefetch_related('groups').order_by("-id")
     serializer_class = UserSerializer
     # default; we'll override per-action in get_permissions()
     permission_classes = [permissions.IsAuthenticated]
@@ -52,8 +87,10 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ["create"]:               # self-registration
             return [permissions.AllowAny()]
-        if self.action in ["retrieve", "partial_update", "update"]:
-            return [permissions.IsAuthenticated(), IsSelfOrStaff()]
+        if self.action in ["retrieve"]:
+            return [permissions.IsAuthenticated(), CanEditUsers()]  # Same permission as edit for viewing
+        if self.action in ["partial_update", "update"]:
+            return [permissions.IsAuthenticated(), CanEditUsers()]
         if self.action in ["list", "destroy"]:
             return [permissions.IsAuthenticated(), IsDirectorOrAdmin()]
         return super().get_permissions()
@@ -65,17 +102,33 @@ class UserViewSet(viewsets.ModelViewSet):
             user_hierarchy = get_user_role_hierarchy(self.request.user)
             is_director_or_above = user_hierarchy and user_hierarchy.hierarchy_level >= 3
             
+            # Check for Admin, Director, or Mayor Office group membership
+            user_groups = [g.name for g in self.request.user.groups.all()]
+            is_admin = "Admin" in user_groups
+            is_director = "Director" in user_groups
+            is_mayor_office = "Mayor Office" in user_groups
+            has_full_rights = is_admin or is_director or is_mayor_office
+            
+            # Debug logging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"UserViewSet.get_queryset - User: {self.request.user.username}, Groups: {user_groups}, is_admin: {is_admin}, has_full_rights: {has_full_rights}")
+            
             # Check if user has view_user permission
             has_view_user = self.request.user.has_perm("cas_app.view_user")
             
-            if is_staff or is_director_or_above or has_view_user:
-                qs = super().get_queryset().exclude(status="deleted")
+            if is_staff or is_director_or_above or has_view_user or has_full_rights:
+                # Get base queryset
+                base_qs = super().get_queryset()
+                total_before_filter = base_qs.count()
+                qs = base_qs.exclude(status="deleted")
+                total_after_filter = qs.count()
+                logger.info(f"UserViewSet.get_queryset - Total users before filter: {total_before_filter}, after excluding deleted: {total_after_filter}")
                 
-                # Focal Person: filter by office
-                user_groups = [g.name for g in self.request.user.groups.all()]
+                # Focal Person: filter by office (only if they don't have full rights)
                 is_focal_person = any("Focal Person" in g for g in user_groups)
                 
-                if is_focal_person and not (is_staff or is_director_or_above):
+                if is_focal_person and not (is_staff or is_director_or_above or has_full_rights):
                     # Focal Person can only see users in their office
                     if self.request.user.office:
                         qs = qs.filter(office=self.request.user.office)
@@ -85,32 +138,50 @@ class UserViewSet(viewsets.ModelViewSet):
                 
                 return qs
             # Non-staff/Director: queryset is limited to self to avoid leaking existence via list.
-            return User.objects.filter(pk=self.request.user.pk).exclude(status="deleted")
+            logger.warning(f"UserViewSet.get_queryset - User {self.request.user.username} does not have permission to list users. Returning only self.")
+            return User.objects.select_related('office', 'added_by', 'status_changed_by').prefetch_related('groups').filter(pk=self.request.user.pk).exclude(status="deleted")
         # Fallback for unauthenticated (shouldn't reach here due to permissions, but safety check)
         return User.objects.none()
 
     def perform_create(self, serializer):
-        # Check if user has add_user permission
+        # Role-based create permissions:
+        # - Admin: Can create users with any role
+        # - Director and Mayor Office: Can only create Focal Person and Citizen
+        # - Focal Person: Cannot create users
         if self.request.user.is_authenticated:
-            has_add_user = self.request.user.has_perm("cas_app.add_user")
             user_groups = [g.name for g in self.request.user.groups.all()]
+            is_admin = "Admin" in user_groups
+            is_director = "Director" in user_groups
+            is_mayor_office = "Mayor Office" in user_groups
             is_focal_person = any("Focal Person" in g for g in user_groups)
             
-            # If not self-registration, check permissions
-            if not has_add_user and not (self.request.user.is_staff or self.request.user.is_superuser):
-                # Focal Person can only create Citizen users
-                if is_focal_person:
-                    # Ensure only Citizen role is assigned
-                    groups = serializer.validated_data.get("groups", [])
-                    citizen_group = Group.objects.filter(name="Citizen").first()
-                    if citizen_group:
-                        serializer.validated_data["groups"] = [citizen_group]
-                    else:
-                        # Create Citizen group if it doesn't exist
-                        citizen_group, _ = Group.objects.get_or_create(name="Citizen")
-                        serializer.validated_data["groups"] = [citizen_group]
-                else:
-                    raise permissions.PermissionDenied("You do not have permission to create users.")
+            # Focal Person cannot create users
+            if is_focal_person and not (is_admin or is_director or is_mayor_office):
+                raise permissions.PermissionDenied("Focal Person role cannot create users.")
+            
+            # Check if user has permission to create
+            if not (is_admin or is_director or is_mayor_office or self.request.user.is_staff or self.request.user.is_superuser):
+                raise permissions.PermissionDenied("You do not have permission to create users.")
+            
+            # Validate role assignment
+            requested_groups = serializer.validated_data.get("groups", [])
+            if requested_groups:
+                requested_role_names = [g.name if hasattr(g, 'name') else str(g) for g in requested_groups]
+                # Handle case where groups might be passed as strings
+                if isinstance(requested_groups[0], str):
+                    requested_role_names = requested_groups
+                
+                # Admin can create any role
+                if is_admin:
+                    pass  # Allow any role
+                # Director and Mayor Office can only create Focal Person and Citizen
+                elif is_director or is_mayor_office:
+                    allowed_roles = {"Focal Person", "Citizen"}
+                    if not all(role in allowed_roles for role in requested_role_names):
+                        raise permissions.PermissionDenied(
+                            f"Director and Mayor Office can only create users with roles: Focal Person, Citizen. "
+                            f"Requested roles: {', '.join(requested_role_names)}"
+                        )
         
         # For self-registration, request.user may be Anonymous; added_by stays None.
         user = serializer.save(added_by=self.request.user if self.request.user.is_authenticated else None)
@@ -135,7 +206,51 @@ class UserViewSet(viewsets.ModelViewSet):
                 user.save(update_fields=["office"])
 
     def perform_update(self, serializer):
-        # Only self or staff gets here (checked by IsSelfOrStaff)
+        # Check hierarchy-based permissions for edit
+        instance = serializer.instance
+        request_user = self.request.user
+        
+        if request_user.is_authenticated:
+            user_groups = [g.name for g in request_user.groups.all()]
+            is_admin = "Admin" in user_groups
+            is_director = "Director" in user_groups
+            is_mayor_office = "Mayor Office" in user_groups
+            
+            # Get hierarchy levels
+            hierarchy_levels = {
+                "Citizen": 1,
+                "Focal Person": 2,
+                "Director": 3,
+                "Mayor Office": 4,
+                "Admin": 5,
+            }
+            
+            # Get target user's highest role level
+            target_user_groups = [g.name for g in instance.groups.all()]
+            target_user_level = max([hierarchy_levels.get(g, 0) for g in target_user_groups], default=0)
+            
+            # Get current user's level
+            current_user_level = 0
+            if is_admin:
+                current_user_level = 5
+            elif is_mayor_office:
+                current_user_level = 4
+            elif is_director:
+                current_user_level = 3
+            
+            # Users cannot edit users with same or higher hierarchy level
+            if current_user_level > 0 and target_user_level >= current_user_level:
+                raise permissions.PermissionDenied(
+                    f"You cannot edit users with the same or higher hierarchy level. "
+                    f"Your level: {current_user_level}, Target user level: {target_user_level}"
+                )
+            
+            # Only Admin can change roles; Director and Mayor Office cannot
+            if not is_admin and "groups" in serializer.validated_data:
+                # Remove groups from validated_data if user is not Admin
+                serializer.validated_data.pop("groups", None)
+        
+        # Permission check passed (checked by CanEditUsers)
         user = serializer.save(status_changed_by=self.request.user)
         pwd = serializer.validated_data.get("password")
         if pwd:
@@ -143,8 +258,45 @@ class UserViewSet(viewsets.ModelViewSet):
             user.save(update_fields=["password"])
 
     def destroy(self, request, *args, **kwargs):
-        # Only admins can destroy (permission enforced in get_permissions)
+        # Check hierarchy-based permissions for delete
         instance = self.get_object()
+        
+        if request.user.is_authenticated:
+            user_groups = [g.name for g in request.user.groups.all()]
+            is_admin = "Admin" in user_groups
+            is_director = "Director" in user_groups
+            is_mayor_office = "Mayor Office" in user_groups
+            
+            # Get hierarchy levels
+            hierarchy_levels = {
+                "Citizen": 1,
+                "Focal Person": 2,
+                "Director": 3,
+                "Mayor Office": 4,
+                "Admin": 5,
+            }
+            
+            # Get target user's highest role level
+            target_user_groups = [g.name for g in instance.groups.all()]
+            target_user_level = max([hierarchy_levels.get(g, 0) for g in target_user_groups], default=0)
+            
+            # Get current user's level
+            current_user_level = 0
+            if is_admin:
+                current_user_level = 5
+            elif is_mayor_office:
+                current_user_level = 4
+            elif is_director:
+                current_user_level = 3
+            
+            # Users cannot delete users with same or higher hierarchy level
+            if current_user_level > 0 and target_user_level >= current_user_level:
+                return Response(
+                    {"detail": f"You cannot delete users with the same or higher hierarchy level. "
+                              f"Your level: {current_user_level}, Target user level: {target_user_level}"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
         instance.deleted_by = request.user
         instance.status = "deleted"
         instance.save(update_fields=["deleted_by", "status"])
@@ -286,6 +438,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         Case.objects
         .filter(deleted_by__isnull=True)
         .select_related("citizen_id", "reported_by", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case")
+        .prefetch_related("status_history", "feedbacks")
     )
     serializer_class = CaseSerializer
     permission_classes = [permissions.IsAuthenticated, CaseAccessPermission]
@@ -513,7 +666,7 @@ class CaseViewSet(viewsets.ModelViewSet):
 
 
 class OfficeViewSet(viewsets.ModelViewSet):
-    queryset = Office.objects.all().order_by("name")
+    queryset = Office.objects.select_related('added_by', 'updated_by', 'office_representative').order_by("name")
     serializer_class = OfficeSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -937,7 +1090,7 @@ class ReportsViewSet(viewsets.ViewSet):
 
     # ---- helpers ----
     def _filtered_cases(self, request):
-        qs = Case.objects.filter(deleted_by__isnull=True)
+        qs = Case.objects.filter(deleted_by__isnull=True).select_related("office_id", "citizen_id", "reported_by", "added_by")
 
         # citizen scoping
         if is_citizen(request.user):
@@ -965,7 +1118,7 @@ class ReportsViewSet(viewsets.ViewSet):
         if status:
             qs = qs.filter(status=status)
 
-        return qs.select_related("office_id", "citizen_id")
+        return qs
 
     # ---- /reports/summary/ ----
     @action(detail=False, methods=["get"], url_path="summary")
@@ -1038,9 +1191,10 @@ class ReportsViewSet(viewsets.ViewSet):
              .order_by("-total")[:10]
         )
 
-        # Fetch user basics in one go
+        # Fetch user basics in one go with optimized query
+        user_ids = [row["to_user_id"] for row in agg if row["to_user_id"]]
         user_map = {
-            u.id: u for u in User.objects.filter(id__in=[row["to_user_id"] for row in agg])
+            u.id: u for u in User.objects.filter(id__in=user_ids).select_related('office').only('id', 'username', 'first_name', 'last_name')
         }
         out = []
         for row in agg:
@@ -1055,7 +1209,7 @@ class ReportsViewSet(viewsets.ViewSet):
         return Response(out)
     
 
-DIRECTOR_AND_ABOVE = {"Director", "President Office", "President"}
+DIRECTOR_AND_ABOVE = {"Director", "Mayor Office", "Admin"}
 
 def is_citizen(user):
     return user.is_authenticated and user.groups.filter(name="Citizen").exists()
@@ -1066,7 +1220,7 @@ def is_director_or_above(user):
 class AnnouncementPermission(BasePermission):
     """
     - Anyone authenticated can READ (list/retrieve).
-    - Only Director & above (or superuser) can CREATE/UPDATE/DELETE.
+    - Only Admin, Director, and Mayor Office can CREATE/UPDATE/DELETE.
     """
 
     def has_permission(self, request, view):
@@ -1075,14 +1229,21 @@ class AnnouncementPermission(BasePermission):
             return False
         if request.method in SAFE_METHODS:
             return True
-        # non-safe methods
-        return user.is_superuser or is_director_or_above(user)
+        # non-safe methods - only Admin, Director, and Mayor Office
+        if user.is_superuser:
+            return True
+        user_groups = [g.name for g in user.groups.all()]
+        return "Admin" in user_groups or "Director" in user_groups or "Mayor Office" in user_groups
 
     def has_object_permission(self, request, view, obj):
         # same rules object-level
         if request.method in SAFE_METHODS:
             return True
-        return request.user.is_superuser or is_director_or_above(request.user)
+        user = request.user
+        if user.is_superuser:
+            return True
+        user_groups = [g.name for g in user.groups.all()]
+        return "Admin" in user_groups or "Director" in user_groups or "Mayor Office" in user_groups
     
 class CaseFeedbackViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -1126,7 +1287,7 @@ class CaseFeedbackViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
-    queryset = Announcement.objects.all()
+    queryset = Announcement.objects.select_related('created_by', 'updated_by').prefetch_related('recipients_groups', 'recipients_offices').all()
     serializer_class = AnnouncementSerializer
     permission_classes = [permissions.IsAuthenticated, AnnouncementPermission]
 
@@ -1171,7 +1332,6 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save(created_by=self.request.user, updated_by=self.request.user)
         
-        # Create notifications for announcement recipients (optimized with bulk_create)
         # Get target users based on recipients_groups and recipients_offices
         target_users = User.objects.none()
         
@@ -1193,25 +1353,24 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
                 target_users = office_users
         
         # Limit to prevent too many notifications (safety limit)
-        target_users = target_users[:500]  # Max 500 users per announcement
+        target_users_list = list(target_users[:500])  # Max 500 users per announcement
         
-        # Create notifications in bulk (more efficient)
-        if target_users.exists():
-            message_preview = instance.content[:200] + ("..." if len(instance.content) > 200 else "")
-            notifications = [
-                Notification(
-                    user=user,
-                    notification_type="announcement",
-                    title=f"New Announcement: {instance.title}",
-                    message=message_preview,
-                    related_announcement_id=instance,
-                )
-                for user in target_users
-            ]
-            # Bulk create in chunks of 100 for better performance
-            chunk_size = 100
-            for i in range(0, len(notifications), chunk_size):
-                Notification.objects.bulk_create(notifications[i:i + chunk_size], ignore_conflicts=True)
+        # Get delivery modes from the announcement
+        delivery_modes = instance.delivery_modes if instance.delivery_modes else ["in_app"]
+        
+        # Send via specified channels
+        if target_users_list and delivery_modes:
+            from .delivery_services import send_announcement_via_channels
+            try:
+                results = send_announcement_via_channels(instance, target_users_list, delivery_modes)
+                # Log results (could be stored in a separate model for tracking)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Announcement {instance.id} sent via channels: {results}")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error sending announcement via channels: {e}")
         
         return instance
 

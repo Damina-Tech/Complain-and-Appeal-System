@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { SuccessModal } from "@/components/ui/success-modal";
 import { Lock, Eye, EyeOff } from "lucide-react";
 import InputGroup from "@/components/FormElements/InputGroup";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export function PasswordChangeForm() {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     old_password: "",
     new_password: "",
@@ -31,22 +33,22 @@ export function PasswordChangeForm() {
 
     // Validation
     if (!formData.old_password || !formData.new_password || !formData.confirm_password) {
-      setError("All fields are required.");
+      setError(t("forms", "allFieldsRequired") || "All fields are required.");
       return;
     }
 
     if (formData.new_password.length < 8) {
-      setError("New password must be at least 8 characters long.");
+      setError(t("forms", "passwordMinLength") || "New password must be at least 8 characters long.");
       return;
     }
 
     if (formData.new_password !== formData.confirm_password) {
-      setError("New password and confirm password do not match.");
+      setError(t("forms", "passwordsDoNotMatch") || "New password and confirm password do not match.");
       return;
     }
 
     if (formData.old_password === formData.new_password) {
-      setError("New password must be different from old password.");
+      setError(t("forms", "passwordMustBeDifferent") || "New password must be different from old password.");
       return;
     }
 
@@ -89,7 +91,7 @@ export function PasswordChangeForm() {
   };
 
   return (
-    <ShowcaseSection title="Change Password" className="!p-7">
+    <ShowcaseSection title={t("settings", "changePassword") || "Change Password"} className="!p-7">
       {error && (
         <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-100">
           {error}
@@ -99,8 +101,8 @@ export function PasswordChangeForm() {
         <InputGroup
           type={showOldPassword ? "text" : "password"}
           name="old_password"
-          label="Current Password"
-          placeholder="Enter current password"
+          label={t("settings", "currentPassword") || "Current Password"}
+          placeholder={t("settings", "enterCurrentPassword") || "Enter current password"}
           value={formData.old_password}
           handleChange={(e) => setFormData((s) => ({ ...s, old_password: e.target.value }))}
           icon={<Lock />}
@@ -119,8 +121,8 @@ export function PasswordChangeForm() {
         <InputGroup
           type={showNewPassword ? "text" : "password"}
           name="new_password"
-          label="New Password"
-          placeholder="Enter new password (min. 8 characters)"
+          label={t("settings", "newPassword") || "New Password"}
+          placeholder={t("settings", "enterNewPassword") || "Enter new password (min. 8 characters)"}
           value={formData.new_password}
           handleChange={(e) => setFormData((s) => ({ ...s, new_password: e.target.value }))}
           icon={<Lock />}
@@ -139,8 +141,8 @@ export function PasswordChangeForm() {
         <InputGroup
           type={showConfirmPassword ? "text" : "password"}
           name="confirm_password"
-          label="Confirm New Password"
-          placeholder="Confirm new password"
+          label={t("settings", "confirmNewPassword") || "Confirm New Password"}
+          placeholder={t("settings", "confirmNewPassword") || "Confirm new password"}
           value={formData.confirm_password}
           handleChange={(e) => setFormData((s) => ({ ...s, confirm_password: e.target.value }))}
           icon={<Lock />}
@@ -170,7 +172,7 @@ export function PasswordChangeForm() {
             }}
             className="rounded-lg border border-stroke px-6 py-[7px] font-medium text-dark hover:shadow-1 dark:border-dark-3 dark:text-white"
           >
-            Clear
+            {t("common", "clear") || "Clear"}
           </Button>
 
           <Button
@@ -178,7 +180,7 @@ export function PasswordChangeForm() {
             disabled={loading}
             className="rounded-lg bg-primary px-6 py-[7px] font-medium text-gray-2 hover:bg-opacity-90"
           >
-            {loading ? "Changing..." : "Change Password"}
+            {loading ? t("common", "loading") : t("settings", "changePassword") || "Change Password"}
           </Button>
         </div>
       </form>
@@ -186,8 +188,8 @@ export function PasswordChangeForm() {
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="Success"
-        message="Password changed successfully."
+        title={t("common", "success")}
+        message={t("settings", "passwordChanged") || "Password changed successfully."}
         autoCloseMs={3000}
       />
     </ShowcaseSection>

@@ -12,6 +12,7 @@ import { BellIcon } from "./icons";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
 import { Check, CheckCheck, RefreshCw } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type Notification = {
   id: number | string;
@@ -29,6 +30,7 @@ const LAST_CHECK_KEY = "notification_last_check";
 const MIN_CHECK_INTERVAL = 2 * 60 * 1000; // 2 minutes minimum between checks
 
 export function Notification() {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -143,15 +145,9 @@ export function Notification() {
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    if (!notification.is_read) {
-      markAsRead(notification.id);
-    }
     setIsOpen(false);
-    
-    // Navigate to related case if available
-    if (notification.related_case_id) {
-      router.push(`/cases/${notification.related_case_id}/view`);
-    }
+    // Navigate to notification detail page
+    router.push(`/notifications/${notification.id}`);
   };
 
   // Load on mount (only once)
@@ -217,10 +213,10 @@ export function Notification() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) return t("notifications", "justNow");
+    if (diffMins < 60) return `${diffMins}${t("notifications", "minutesAgo")}`;
+    if (diffHours < 24) return `${diffHours}${t("notifications", "hoursAgo")}`;
+    if (diffDays < 7) return `${diffDays}${t("notifications", "daysAgo")}`;
     return date.toLocaleDateString();
   };
 
@@ -273,7 +269,7 @@ export function Notification() {
       >
         <div className="mb-1 flex items-center justify-between px-2 py-1.5">
           <span className="text-lg font-medium text-dark dark:text-white">
-            Notifications
+            {t("notifications", "title")}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -282,13 +278,13 @@ export function Notification() {
               onClick={handleRefresh}
               disabled={refreshing || loading}
               className="h-6 w-6 p-0"
-              title="Refresh notifications"
+              title={t("notifications", "refresh")}
             >
               <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
             </Button>
             {unreadCount > 0 && (
           <span className="rounded-md bg-primary px-[9px] py-0.5 text-xs font-medium text-white">
-                {unreadCount} new
+                {unreadCount} {t("notifications", "new")}
           </span>
             )}
             {unreadCount > 0 && (
@@ -297,10 +293,10 @@ export function Notification() {
                 size="sm"
                 onClick={markAllAsRead}
                 className="h-6 px-2 text-xs"
-                title="Mark all as read"
+                title={t("notifications", "markAllRead")}
               >
                 <CheckCheck className="h-3 w-3 mr-1" />
-                Mark all read
+                {t("notifications", "markAllRead")}
               </Button>
             )}
           </div>
@@ -309,11 +305,11 @@ export function Notification() {
         <ul className="mb-3 max-h-[20rem] space-y-1.5 overflow-y-auto">
           {loading && notifications.length === 0 ? (
             <li className="px-2 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              Loading notifications...
+              {t("notifications", "loadingNotifications")}
             </li>
           ) : notifications.length === 0 ? (
             <li className="px-2 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              No notifications
+              {t("notifications", "noNotifications")}
             </li>
           ) : (
             notifications.map((notification) => (
@@ -345,7 +341,7 @@ export function Notification() {
                             markAsRead(notification.id);
                           }}
                           className="shrink-0 rounded p-1 hover:bg-gray-200 dark:hover:bg-dark-4"
-                          title="Mark as read"
+                          title={t("notifications", "markAsRead")}
                         >
                           <Check className="h-3 w-3 text-gray-500 dark:text-gray-400" />
                         </button>
@@ -372,7 +368,7 @@ export function Notification() {
             }}
             className="block w-full rounded-lg border border-primary p-2 text-center text-sm font-medium tracking-wide text-primary outline-none transition-colors hover:bg-blue-light-5 focus:bg-blue-light-5 focus:text-primary focus-visible:border-primary dark:border-dark-3 dark:text-dark-6 dark:hover:border-dark-5 dark:hover:bg-dark-3 dark:hover:text-dark-7 dark:focus-visible:border-dark-5 dark:focus-visible:bg-dark-3 dark:focus-visible:text-dark-7"
         >
-          See all notifications
+          {t("notifications", "seeAll")}
           </button>
         )}
       </DropdownContent>
