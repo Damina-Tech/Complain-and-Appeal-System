@@ -121,6 +121,22 @@ export default function ComplaintAppealPage() {
   const [users, setUsers] = useState<Array<{ id: string | number; name: string; email: string }>>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Categories list
+  const [categories, setCategories] = useState<Array<{ id: string | number; name: string; description?: string }>>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  
+  // Category management modal
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryFormError, setCategoryFormError] = useState("");
+  const [categoryForm, setCategoryForm] = useState<{
+    name: string;
+    description: string;
+  }>({
+    name: "",
+    description: "",
+  });
+
   const [rows, setRows] = useState<Row[]>([]);
   const [successOpen, setSuccessOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
@@ -189,15 +205,28 @@ export default function ComplaintAppealPage() {
     return all;
   };
 
-  const mapRow = (c: ApiCase): Row => ({
-    id: c.id,
-    title: c.title || `Case #${c.id}`,
-    category: c.category_id || "complaint",
-    channel: c.channel || "web",
-    priority: c.priority || "medium",
-    date: (c.created_at ? String(c.created_at).slice(0, 10) : "").replace(/T.*/, ""),
-    status: (c.status || "pending").replace(/\b\w/g, (m: string) => m.toUpperCase()),
-  });
+  const mapRow = (c: ApiCase): Row => {
+    // Find category name from categories list or use category_id if it's an object
+    let categoryName = "No Category";
+    if (c.category_id) {
+      if (typeof c.category_id === "object" && c.category_id !== null && "name" in c.category_id) {
+        categoryName = (c.category_id as any).name;
+      } else {
+        const cat = categories.find((cat) => String(cat.id) === String(c.category_id));
+        categoryName = cat?.name || String(c.category_id);
+      }
+    }
+    
+    return {
+      id: c.id,
+      title: c.title || `Case #${c.id}`,
+      category: categoryName,
+      channel: c.channel || "web",
+      priority: c.priority || "medium",
+      date: (c.created_at ? String(c.created_at).slice(0, 10) : "").replace(/T.*/, ""),
+      status: (c.status || "pending").replace(/\b\w/g, (m: string) => m.toUpperCase()),
+    };
+  };
 
   const loadCases = async () => {
     if (!API_URL || !token) return;
@@ -245,9 +274,34 @@ export default function ComplaintAppealPage() {
     }
   };
 
+  // Load categories
+  const loadCategories = async () => {
+    if (!API_URL || !token) return;
+    try {
+      setLoadingCategories(true);
+      const res = await fetch(`${API_URL}/categories/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`Failed to load categories: ${res.status}`);
+      const data: any = await res.json();
+      const categoryList = (Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description || "",
+      }));
+      setCategories(categoryList);
+    } catch (e: any) {
+      console.error("Failed to load categories:", e);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
   useEffect(() => {
     loadCases();
     loadUsers();
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -315,9 +369,16 @@ export default function ComplaintAppealPage() {
                 <SelectValue placeholder={t("cases", "category")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="complaint">Complaints</SelectItem>
-                <SelectItem value="appeal">Appeals</SelectItem>
+                <SelectItem value="all">All Categories</SelectItem>
+                {loadingCategories ? (
+                  <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
+                ) : (
+                  categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
 
@@ -556,7 +617,10 @@ export default function ComplaintAppealPage() {
               const formData = new FormData();
               formData.append("title", form.title.trim());
               formData.append("description", form.description.trim());
-              formData.append("category_id", form.category);
+              // category is now the category ID (number/string)
+              if (form.category) {
+                formData.append("category_id", String(form.category));
+              }
               formData.append("status", form.status || "pending");
               if (form.office) formData.append("office_id", form.office);
               if (form.citizenId) formData.append("citizen_id", form.citizenId);
@@ -729,26 +793,43 @@ export default function ComplaintAppealPage() {
             <label className="mb-1 block text-sm font-medium">
               {t("cases", "category")} <span className="text-red-500">*</span>
             </label>
-          <Select
-            value={form.category}
-              onValueChange={(val) => {
-                setForm((s) => ({ ...s, category: val }));
-                if (formErrors.category) setFormErrors((e) => ({ ...e, category: undefined }));
-              }}
-          >
-              <SelectTrigger className={formErrors.category ? "border-red-500" : ""}>
-              <SelectValue placeholder={t("forms", "selectCategory")} />
-            </SelectTrigger>
-            <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
-              <SelectItem value="land">Land</SelectItem>
-              <SelectItem value="education">Education</SelectItem>
-              <SelectItem value="infrastructure">Infrastructure</SelectItem>
-              <SelectItem value="healthcare">Healthcare</SelectItem>
-              <SelectItem value="water & sanitation">Water & Sanitation</SelectItem>
-              <SelectItem value="human right">Human Right</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Select
+                  value={form.category}
+                  onValueChange={(val) => {
+                    setForm((s) => ({ ...s, category: val }));
+                    if (formErrors.category) setFormErrors((e) => ({ ...e, category: undefined }));
+                  }}
+                >
+                  <SelectTrigger className={formErrors.category ? "border-red-500" : ""}>
+                    <SelectValue placeholder={t("forms", "selectCategory")} />
+                  </SelectTrigger>
+                <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
+                  {loadingCategories ? (
+                    <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
+                  ) : categories.length === 0 ? (
+                    <SelectItem value="none" disabled>No categories available</SelectItem>
+                  ) : (
+                    categories.map((cat) => (
+                      <SelectItem key={cat.id} value={String(cat.id)}>
+                        {cat.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                onClick={() => setCategoryModalOpen(true)}
+                className="bg-green-600 text-white hover:bg-green-700 whitespace-nowrap"
+                title="Add New Category"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Category
+              </Button>
+            </div>
             {formErrors.category && (
               <p className="mt-1 text-sm text-red-500">{formErrors.category}</p>
             )}
@@ -1191,6 +1272,170 @@ export default function ComplaintAppealPage() {
               disabled={creatingUser}
             >
               {creatingUser ? "Creating..." : "Create User"}
+            </Button>
+          </div>
+        </form>
+      </AnimatedModal>
+
+      {/* Add Category Modal */}
+      <AnimatedModal
+        open={categoryModalOpen}
+        onClose={() => {
+          setCategoryModalOpen(false);
+          setCategoryFormError("");
+          setCategoryForm({
+            name: "",
+            description: "",
+          });
+        }}
+        title="Add New Category"
+        maxWidthClassName="max-w-md"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setCategoryFormError("");
+
+            if (!categoryForm.name?.trim()) {
+              setCategoryFormError("Category name is required");
+              return;
+            }
+
+            if (!API_URL) {
+              setCategoryFormError("NEXT_PUBLIC_API_URL is not set");
+              return;
+            }
+            if (!token) {
+              setCategoryFormError("You are not authenticated. Please sign in.");
+              return;
+            }
+
+            try {
+              setCreatingCategory(true);
+
+              const payload: Record<string, any> = {
+                name: categoryForm.name.trim(),
+                is_active: true,
+              };
+
+              if (categoryForm.description?.trim()) {
+                payload.description = categoryForm.description.trim();
+              }
+
+              const res = await fetch(`${API_URL}/categories/`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (!res.ok) {
+                let errorData: any = {};
+                const responseText = await res.text();
+                
+                try {
+                  errorData = JSON.parse(responseText);
+                } catch {
+                  errorData = { detail: responseText || res.statusText };
+                }
+
+                let errorMessage = "";
+                if (errorData.detail) {
+                  errorMessage = Array.isArray(errorData.detail) ? errorData.detail[0] : String(errorData.detail);
+                } else if (errorData.message) {
+                  errorMessage = Array.isArray(errorData.message) ? errorData.message[0] : String(errorData.message);
+                } else if (errorData.name) {
+                  errorMessage = Array.isArray(errorData.name) ? errorData.name[0] : String(errorData.name);
+                } else {
+                  errorMessage = typeof errorData === 'string' ? errorData : `Create failed (${res.status})`;
+                }
+
+                setCategoryFormError(errorMessage);
+                return;
+              }
+
+              const newCategory = await res.json();
+
+              // Reload categories list
+              await loadCategories();
+
+              // Set the newly created category as selected
+              setForm((s) => ({ ...s, category: String(newCategory.id) }));
+
+              // Close modal and reset form
+              setCategoryModalOpen(false);
+              setCategoryForm({
+                name: "",
+                description: "",
+              });
+
+              // Show success message
+              setSuccessMsg("Category created successfully and selected.");
+              setSuccessOpen(true);
+              setTimeout(() => setSuccessOpen(false), 3000);
+            } catch (err: any) {
+              setCategoryFormError(err?.message || "Failed to create category");
+            } finally {
+              setCreatingCategory(false);
+            }
+          }}
+        >
+          {categoryFormError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {categoryFormError}
+            </div>
+          )}
+
+          <div>
+            <Input
+              placeholder="Category Name *"
+              value={categoryForm.name}
+              onChange={(e) => {
+                setCategoryForm((s) => ({ ...s, name: e.target.value }));
+                if (categoryFormError) setCategoryFormError("");
+              }}
+              required
+            />
+          </div>
+
+          <div>
+            <TextAreaGroup
+              name="description"
+              label="Description (Optional)"
+              rows={3}
+              placeholder="Enter category description..."
+              value={categoryForm.description}
+              onChange={(e) => {
+                setCategoryForm((s) => ({ ...s, description: e.target.value }));
+              }}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCategoryModalOpen(false);
+                setCategoryFormError("");
+                setCategoryForm({
+                  name: "",
+                  description: "",
+                });
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1 bg-green-600 text-white hover:bg-green-700"
+              disabled={creatingCategory}
+            >
+              {creatingCategory ? "Creating..." : "Create Category"}
             </Button>
           </div>
         </form>

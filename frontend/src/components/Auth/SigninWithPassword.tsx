@@ -8,11 +8,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { loginUser } from "@/utils/api";
 import { defaultRouteForRole } from "@/lib/role";
 import { Eye, EyeOff } from "lucide-react";
+import { getErrorMessage, API_URL } from "@/config/constants";
 
 export default function SigninWithPassword() {
   const [data, setData] = useState({
-    email: process.env.NEXT_PUBLIC_DEMO_USER_MAIL || "",
-    password: process.env.NEXT_PUBLIC_DEMO_USER_PASS || "",
+    email: "",
+    password: "",
     remember: false,
   });
 
@@ -59,7 +60,7 @@ export default function SigninWithPassword() {
       // Fetch user groups from /auth/me endpoint after login
       if (token) {
         try {
-          const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me/`, {
+          const meRes = await fetch(`${API_URL}/auth/me/`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
           });
@@ -92,7 +93,11 @@ export default function SigninWithPassword() {
       }
     } catch (err: any) {
       setLoading(false);
-      setError("Invalid email or password");
+      // Use the friendly message if it was set by loginUser, otherwise use getErrorMessage
+      // This will show "Cannot reach the server" for network errors (ERR_NETWORK, ECONNREFUSED)
+      // and "Invalid email or password" for authentication errors (401)
+      const errorMessage = err?.friendlyMessage || getErrorMessage(err);
+      setError(errorMessage);
     }
   };
 

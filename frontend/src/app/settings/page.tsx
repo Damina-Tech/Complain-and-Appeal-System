@@ -88,7 +88,7 @@ export default function SettingsPage() {
         system_email: "noreply@cas.local",
         system_phone: "+251900000000",
         frontend_url: process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:3000",
-        backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api",
+        backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api",
         email_host: "",
         email_port: "",
         email_use_tls: true,
@@ -217,7 +217,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setSettings({ ...settings, backend_url: e.target.value })
                   }
-                  placeholder="http://localhost:8001/api"
+                  placeholder="http://localhost:8000/api"
                 />
               </div>
             </div>

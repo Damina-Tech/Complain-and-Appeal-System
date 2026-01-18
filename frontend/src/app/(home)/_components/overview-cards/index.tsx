@@ -3,7 +3,7 @@ import { getOverviewData } from "../../fetch";
 import { OverviewCard } from "./card";
 import * as icons from "./icons";
 import { cookies } from "next/headers";
-import { translations } from "@/lib/translations";
+import { getTranslation } from "@/lib/translations/index";
 
 export async function OverviewCardsGroup() {
   const { totalCases, totalCaseOwners, totalSolvedCases, totalPendingCases } = await getOverviewData();
@@ -12,13 +12,9 @@ export async function OverviewCardsGroup() {
   const cookieStore = await cookies();
   const lang = (cookieStore.get("selectedLanguage")?.value || "en") as "en" | "am" | "om";
   
-  // Helper function to get translation with language
+  // Use the centralized getTranslation function
   const t = (ns: "dashboard" | "common" | "cases", key: string) => {
-    const namespaceTranslations = translations[ns];
-    if (!namespaceTranslations) return key;
-    const langTranslations = namespaceTranslations[lang];
-    if (!langTranslations) return key;
-    return (langTranslations as any)[key] || key;
+    return getTranslation(ns, key, lang);
   };
 
   return (

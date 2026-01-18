@@ -1,6 +1,5 @@
 import axios from "axios";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL, getErrorMessage } from "@/config/constants";
 
 export const loginUser = async (username: string, password: string) => {
   try {
@@ -11,7 +10,13 @@ export const loginUser = async (username: string, password: string) => {
     console.log("Login successful", response.data);
     return response.data; // contains JWT token
   } catch (error: any) {
-    console.error(error.response?.data || error.message);
+    console.error(error.response?.data || error.message, error.code);
+    // Preserve the original error structure so getErrorMessage can properly detect network errors
+    // The error object already has code, message, response, etc., so we don't need to wrap it
+    // Just attach the friendly message to the error object itself
+    if (error && typeof error === 'object') {
+      (error as any).friendlyMessage = getErrorMessage(error);
+    }
     throw error;
   }
 };

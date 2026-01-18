@@ -108,6 +108,45 @@ class OfficeSerializer(serializers.ModelSerializer):
             return obj.office_representative.get_full_name() or obj.office_representative.email or obj.office_representative.username or ""
         return ""
 
+
+class CategorySerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField(read_only=True)
+    updated_by_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "updated_by",
+            "created_by_name",
+            "updated_by_name",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "updated_by",
+            "created_by_name",
+            "updated_by_name",
+        ]
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.username or ""
+        return ""
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return obj.updated_by.get_full_name() or obj.updated_by.username or ""
+        return ""
+
 class CaseStatusHistorySerializer(serializers.ModelSerializer):
     changed_by = serializers.PrimaryKeyRelatedField(read_only=True)
     class Meta:
@@ -164,6 +203,7 @@ class CaseSerializer(serializers.ModelSerializer):
     reported_by  = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
     office_id    = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all(), required=False, allow_null=True)
     parent_case  = serializers.PrimaryKeyRelatedField(queryset=Case.objects.all(), required=False, allow_null=True)
+    category_id  = serializers.PrimaryKeyRelatedField(queryset=Category.objects.filter(is_active=True), required=False, allow_null=True)
 
     status_history = CaseStatusHistorySerializer(many=True, read_only=True)
     feedbacks      = CaseFeedbackSerializer(many=True, read_only=True)

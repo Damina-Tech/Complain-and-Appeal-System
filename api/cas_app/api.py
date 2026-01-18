@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from .serializers import *
 from .models import *
 from django.db import transaction
@@ -157,11 +158,11 @@ class UserViewSet(viewsets.ModelViewSet):
             
             # Focal Person cannot create users
             if is_focal_person and not (is_admin or is_director or is_mayor_office):
-                raise permissions.PermissionDenied("Focal Person role cannot create users.")
+                raise PermissionDenied("Focal Person role cannot create users.")
             
             # Check if user has permission to create
             if not (is_admin or is_director or is_mayor_office or self.request.user.is_staff or self.request.user.is_superuser):
-                raise permissions.PermissionDenied("You do not have permission to create users.")
+                raise PermissionDenied("You do not have permission to create users.")
             
             # Validate role assignment
             requested_groups = serializer.validated_data.get("groups", [])
@@ -178,7 +179,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 elif is_director or is_mayor_office:
                     allowed_roles = {"Focal Person", "Citizen"}
                     if not all(role in allowed_roles for role in requested_role_names):
-                        raise permissions.PermissionDenied(
+                        raise PermissionDenied(
                             f"Director and Mayor Office can only create users with roles: Focal Person, Citizen. "
                             f"Requested roles: {', '.join(requested_role_names)}"
                         )
@@ -240,9 +241,8 @@ class UserViewSet(viewsets.ModelViewSet):
             
             # Users cannot edit users with same or higher hierarchy level
             if current_user_level > 0 and target_user_level >= current_user_level:
-                raise permissions.PermissionDenied(
-                    f"You cannot edit users with the same or higher hierarchy level. "
-                    f"Your level: {current_user_level}, Target user level: {target_user_level}"
+                raise PermissionDenied(
+                    "You cannot edit users with the same or higher role level."
                 )
             
             # Only Admin can change roles; Director and Mayor Office cannot
@@ -291,10 +291,8 @@ class UserViewSet(viewsets.ModelViewSet):
             
             # Users cannot delete users with same or higher hierarchy level
             if current_user_level > 0 and target_user_level >= current_user_level:
-                return Response(
-                    {"detail": f"You cannot delete users with the same or higher hierarchy level. "
-                              f"Your level: {current_user_level}, Target user level: {target_user_level}"},
-                    status=status.HTTP_403_FORBIDDEN
+                raise PermissionDenied(
+                    "You cannot delete users with the same or higher role level."
                 )
         
         instance.deleted_by = request.user
@@ -670,6 +668,15 @@ class OfficeViewSet(viewsets.ModelViewSet):
     serializer_class = OfficeSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        """
+        Customize permissions: Admin, Director, and Mayor Office can create/update/delete.
+        Others can only read.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsDirectorOrAdmin()]
+        return [permissions.IsAuthenticated()]
+
     def perform_create(self, serializer):
         # auto-attach who created the office
         serializer.save(added_by=self.request.user, updated_by=self.request.user)
@@ -677,6 +684,79 @@ class OfficeViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # update tracking
         serializer.save(updated_by=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to check for related Transfer records before deletion.
+        """
+        instance = self.get_object()
+        
+        # Check if there are any Transfer records referencing this office
+        from cas_app.models import Transfer
+        from django.db.models.deletion import ProtectedError
+        
+        transfers_out = Transfer.objects.filter(from_office_id=instance).count()
+        transfers_in = Transfer.objects.filter(to_office_id=instance).count()
+        total_transfers = transfers_out + transfers_in
+        
+        if total_transfers > 0:
+            return Response(
+                {
+                    "detail": f"Cannot delete office '{instance.name}' because it is referenced by {total_transfers} transfer record(s). "
+                             f"Please delete or reassign the related transfers first."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check for other related objects (Announcement recipients, Cases, etc.)
+        # Check if office is used in announcements
+        if hasattr(instance, 'announcement_recipients_offices'):
+            announcement_count = instance.announcement_recipients_offices.count()
+            if announcement_count > 0:
+                return Response(
+                    {
+                        "detail": f"Cannot delete office '{instance.name}' because it is referenced by {announcement_count} announcement(s). "
+                                 f"Please remove the office from related announcements first."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Check if office is used in cases (though Case uses SET_NULL, so this shouldn't block deletion)
+        if hasattr(instance, 'cases'):
+            case_count = instance.cases.filter(deleted_by__isnull=True).count()
+            if case_count > 0:
+                # This is just informational, not blocking, since Case uses SET_NULL
+                pass
+        
+        # Try to delete, catch any ProtectedError that might still occur
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError as e:
+            # Extract information about what's preventing deletion
+            protected_objects = getattr(e, 'protected_objects', [])
+            if protected_objects:
+                # Get the model names
+                model_names = set()
+                for obj_list in protected_objects.values():
+                    for obj in obj_list:
+                        model_names.add(obj.__class__.__name__)
+                
+                model_list = ', '.join(sorted(model_names))
+                return Response(
+                    {
+                        "detail": f"Cannot delete office '{instance.name}' because it is referenced by {model_list} record(s). "
+                                 f"Please remove or reassign the related records first."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            else:
+                return Response(
+                    {
+                        "detail": f"Cannot delete office '{instance.name}' because it is referenced by other records. "
+                                 f"Please remove or reassign the related records first."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
 class TransferViewSet(viewsets.ModelViewSet):
     """
@@ -1385,6 +1465,38 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         ann.updated_by = request.user
         ann.save(update_fields=["is_active", "updated_by", "updated_at"])
         return Response({"id": ann.id, "is_active": ann.is_active})
+
+
+class CategoryViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for Category management.
+    Only Admin, Director, and Mayor Office can create/update/delete categories.
+    All authenticated users can view active categories.
+    """
+    queryset = Category.objects.all().order_by("name")
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [permissions.IsAuthenticated()]
+        # Only Admin, Director, and Mayor Office can create/update/delete
+        return [permissions.IsAuthenticated(), IsDirectorOrAdmin()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # For list view, only show active categories by default
+        if self.action == "list":
+            show_inactive = self.request.query_params.get("show_inactive", "false").lower() == "true"
+            if not show_inactive:
+                qs = qs.filter(is_active=True)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
 
 
 class NotificationViewSet(viewsets.ModelViewSet):

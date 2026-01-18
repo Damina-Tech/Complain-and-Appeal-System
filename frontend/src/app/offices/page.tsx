@@ -211,15 +211,34 @@ export default function OfficesPage() {
 
       const optionMap = new Map<string, { id: string | number; label: string }>();
 
+      // Collect existing representative IDs to keep them in the list even if they're Citizens
+      const existingRepIds = new Set(
+        officeRows
+          .filter((o) => o.representative_id !== "")
+          .map((o) => String(o.representative_id))
+      );
+
       (users || []).forEach((u) => {
+        const userId = String(u.id);
+        const userGroups = u.groups || [];
+        const groupNames = userGroups.map((g) => 
+          typeof g === "string" ? g : g?.name || ""
+        ).filter(Boolean);
+        
+        // Skip if user has Citizen role, UNLESS they're already an existing representative
+        if (groupNames.includes("Citizen") && !existingRepIds.has(userId)) {
+          return;
+        }
+        
         const label =
             `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
             u.email ||
             u.username ||
             String(u.id);
-        optionMap.set(String(u.id), { id: u.id, label });
+        optionMap.set(userId, { id: u.id, label });
       });
 
+      // Add existing representatives that might not be in the users list
       officeRows.forEach((o) => {
         if (o.representative_id !== "") {
           const key = String(o.representative_id);
@@ -289,6 +308,8 @@ export default function OfficesPage() {
     if (!token) return setCreateError("You are not authenticated");
     if (!createForm.name.trim()) return setCreateError("Office name is required");
 
+    let errorHandled = false;
+
     try {
       setCreating(true);
       const payload: Partial<ApiOffice> = {
@@ -314,8 +335,34 @@ export default function OfficesPage() {
       });
 
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || `Create failed: ${res.status}`);
+        // Read response as text first (can only read once)
+        const responseText = await res.text();
+        let errorMessage = `Create failed: ${res.status}`;
+        
+        try {
+          // Try to parse as JSON
+          const errorData = JSON.parse(responseText);
+          if (errorData.detail) {
+            errorMessage = typeof errorData.detail === 'string' 
+              ? errorData.detail 
+              : Array.isArray(errorData.detail) 
+                ? errorData.detail[0] 
+                : errorMessage;
+          } else if (errorData.message) {
+            errorMessage = typeof errorData.message === 'string'
+              ? errorData.message
+              : Array.isArray(errorData.message)
+                ? errorData.message[0]
+                : errorMessage;
+          }
+        } catch {
+          // If JSON parsing fails, use the text as-is
+          errorMessage = responseText || errorMessage;
+        }
+        
+        setCreateError(errorMessage);
+        errorHandled = true;
+        return; // Exit early, don't proceed with success flow
       }
 
       const rows = await loadOffices();
@@ -333,7 +380,10 @@ export default function OfficesPage() {
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (err: any) {
-      setCreateError(err?.message || "Failed to create office");
+      // Only set error if we haven't already handled it above
+      if (!errorHandled) {
+        setCreateError(err?.message || "Failed to create office");
+      }
     } finally {
       setCreating(false);
     }
@@ -363,6 +413,8 @@ export default function OfficesPage() {
     if (!token) return setDetailsError("You are not authenticated");
     if (!editForm.name.trim()) return setDetailsError("Office name is required");
 
+    let errorHandled = false;
+
     try {
       setEditing(true);
       const payload: Partial<ApiOffice> = {
@@ -388,8 +440,34 @@ export default function OfficesPage() {
       });
 
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || `Update failed: ${res.status}`);
+        // Read response as text first (can only read once)
+        const responseText = await res.text();
+        let errorMessage = `Update failed: ${res.status}`;
+        
+        try {
+          // Try to parse as JSON
+          const errorData = JSON.parse(responseText);
+          if (errorData.detail) {
+            errorMessage = typeof errorData.detail === 'string' 
+              ? errorData.detail 
+              : Array.isArray(errorData.detail) 
+                ? errorData.detail[0] 
+                : errorMessage;
+          } else if (errorData.message) {
+            errorMessage = typeof errorData.message === 'string'
+              ? errorData.message
+              : Array.isArray(errorData.message)
+                ? errorData.message[0]
+                : errorMessage;
+          }
+        } catch {
+          // If JSON parsing fails, use the text as-is
+          errorMessage = responseText || errorMessage;
+        }
+        
+        setDetailsError(errorMessage);
+        errorHandled = true;
+        return; // Exit early, don't proceed with success flow
       }
 
       const rows = await loadOffices();
@@ -400,7 +478,10 @@ export default function OfficesPage() {
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (err: any) {
-      setDetailsError(err?.message || "Failed to update office");
+      // Only set error if we haven't already handled it above
+      if (!errorHandled) {
+        setDetailsError(err?.message || "Failed to update office");
+      }
     } finally {
       setEditing(false);
     }
@@ -412,6 +493,8 @@ export default function OfficesPage() {
     if (!API_URL) return setDetailsError("API URL not set");
     if (!token) return setDetailsError("You are not authenticated");
 
+    let errorHandled = false;
+
     try {
       setDeleting(true);
       const res = await fetch(`${API_URL}/offices/${selected.id}/`, {
@@ -420,8 +503,34 @@ export default function OfficesPage() {
       });
 
       if (!res.ok && res.status !== 204) {
-        const msg = await res.text();
-        throw new Error(msg || `Delete failed: ${res.status}`);
+        // Read response as text first (can only read once)
+        const responseText = await res.text();
+        let errorMessage = `Delete failed: ${res.status}`;
+        
+        try {
+          // Try to parse as JSON
+          const errorData = JSON.parse(responseText);
+          if (errorData.detail) {
+            errorMessage = typeof errorData.detail === 'string' 
+              ? errorData.detail 
+              : Array.isArray(errorData.detail) 
+                ? errorData.detail[0] 
+                : errorMessage;
+          } else if (errorData.message) {
+            errorMessage = typeof errorData.message === 'string'
+              ? errorData.message
+              : Array.isArray(errorData.message)
+                ? errorData.message[0]
+                : errorMessage;
+          }
+        } catch {
+          // If JSON parsing fails, use the text as-is (but clean it up)
+          errorMessage = responseText || errorMessage;
+        }
+        
+        setDetailsError(errorMessage);
+        errorHandled = true;
+        return; // Exit early, don't proceed with success flow
       }
 
       const rows = await loadOffices();
@@ -432,7 +541,10 @@ export default function OfficesPage() {
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
     } catch (err: any) {
-      setDetailsError(err?.message || "Failed to delete office");
+      // Only set error if we haven't already handled it above
+      if (!errorHandled) {
+        setDetailsError(err?.message || "Failed to delete office");
+      }
     } finally {
       setDeleting(false);
     }

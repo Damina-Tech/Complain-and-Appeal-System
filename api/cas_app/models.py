@@ -4,6 +4,9 @@ from django.contrib.auth.models import Group
 # Create your models here.
 
 class User(AbstractUser):
+    # Override email to make it unique and use as username
+    email = models.EmailField(unique=True, blank=False, null=False)
+    
     national_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True) 
     address = models.TextField(null=True, blank=True)  # Optional address field
@@ -48,17 +51,37 @@ class Office(models.Model):
         return self.name
 
 
+class Category(models.Model):
+    """
+    Dynamic category management for cases.
+    Categories can be created, edited, and managed through the admin interface or API.
+    """
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="categories_created"
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="categories_updated"
+    )
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "Categories"
+        indexes = [
+            models.Index(fields=['is_active']),
+            models.Index(fields=['name']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class Case(models.Model):
     # enums kept simple for now; adjust as needed
-    CATEGORY_CHOICES = [
-        ("land", "Land"),
-        ("education", "Education"),
-        ("infrastructure", "Infrastructure"),
-        ("healthcare", "Healthcare"),
-        ("water & sanitation", "Water & Sanitation"),
-        ("human right", "Human Right"),
-        ("other", "Other"),
-    ]
     CHANNEL_CHOICES = [
         ("web", "Web"),
         ("walk_in", "Walk-in"),
@@ -78,7 +101,7 @@ class Case(models.Model):
         ("closed", "Closed"),
     ]
 
-    # Core fields (using *_id names where you asked; category_id kept as string choice)
+    # Core fields (using *_id names where you asked)
     parent_case       = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="child_cases")
 
     citizen_id      = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_reported")
@@ -86,7 +109,7 @@ class Case(models.Model):
     office_id       = models.ForeignKey(Office, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases")
     title           = models.CharField(max_length=500, null=True, blank=True)  # optional title for the case
     description     = models.TextField(null=True, blank=True)  # detailed description of the case
-    category_id     = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="complaint")
+    category_id     = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases", db_column="category_id")
     channel         = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="web")
     priority        = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
@@ -111,7 +134,8 @@ class Case(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.title} ({self.get_category_id_display()})"
+        category_name = self.category_id.name if self.category_id else "No Category"
+        return f"{self.title} ({category_name})"
 
 
 class CaseStatusHistory(models.Model):

@@ -37,11 +37,15 @@ def user_login(request):
     user = authenticate(request, username=identifier, password=password)
     print(user)
     # If that fails, try resolving identifier as email to a username
+    # Use .first() instead of .get() to handle potential duplicates until we make email unique
     if user is None and '@' in identifier:
         try:
-            resolved_user = User.objects.get(email=identifier)
-            user = authenticate(request, username=resolved_user.username, password=password)
-        except User.DoesNotExist:
+            # Try case-insensitive email match
+            resolved_user = User.objects.filter(email__iexact=identifier).first()
+            if resolved_user:
+                user = authenticate(request, username=resolved_user.username, password=password)
+        except Exception as e:
+            print(f"Error resolving user by email: {e}")
             user = None
     if user is not None:
         login(request, user)

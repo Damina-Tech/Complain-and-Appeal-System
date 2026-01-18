@@ -2,9 +2,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { getTopSources } from "./fetch"; // ⬅️ ensure this path
+import { getTopSources } from "./fetch";
 import { cookies } from "next/headers";
-import { translations } from "@/lib/translations";
+import { getTranslation } from "@/lib/translations/index";
 
 export async function TopSources({ className }: { className?: string }) {
   const data = await getTopSources();
@@ -14,13 +14,9 @@ export async function TopSources({ className }: { className?: string }) {
   const cookieStore = await cookies();
   const lang = (cookieStore.get("selectedLanguage")?.value || "en") as "en" | "am" | "om";
   
-  // Helper function to get translation with language
+  // Use the centralized getTranslation function
   const t = (ns: "dashboard" | "common" | "cases", key: string) => {
-    const namespaceTranslations = translations[ns];
-    if (!namespaceTranslations) return key;
-    const langTranslations = namespaceTranslations[lang];
-    if (!langTranslations) return key;
-    return (langTranslations as any)[key] || key;
+    return getTranslation(ns, key, lang);
   };
 
   return (

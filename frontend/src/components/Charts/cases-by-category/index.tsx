@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { getCasesByCategoryData } from "@/services/case-reports-services";
 import { CasesByCategoryDonut } from "./pie";
 import { cookies } from "next/headers";
-import { translations } from "@/lib/translations";
+import { getTranslation } from "@/lib/translations/index";
 
 type PropsType = { timeFrame?: string; className?: string };
 
@@ -14,13 +14,9 @@ export async function CasesByCategory({ timeFrame = "monthly", className }: Prop
   const cookieStore = await cookies();
   const lang = (cookieStore.get("selectedLanguage")?.value || "en") as "en" | "am" | "om";
   
-  // Helper function to get translation with language
+  // Use the centralized getTranslation function
   const t = (ns: "dashboard" | "common" | "cases", key: string) => {
-    const namespaceTranslations = translations[ns];
-    if (!namespaceTranslations) return key;
-    const langTranslations = namespaceTranslations[lang];
-    if (!langTranslations) return key;
-    return (langTranslations as any)[key] || key;
+    return getTranslation(ns, key, lang);
   };
 
   return (

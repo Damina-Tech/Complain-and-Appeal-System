@@ -9,8 +9,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from cas_app.models import (
-    Office, Case, CaseStatusHistory, CaseFeedback,
-    Transfer, Assignment, RoleHierarchy,
+    Office, Category, Case, CaseStatusHistory, CaseFeedback,
+    Transfer, Assignment, RoleHierarchy, Announcement, Notification,
 )
 
 User = get_user_model()
@@ -119,12 +119,15 @@ class Command(BaseCommand):
         # Always clear database before seeding
         self.stdout.write(self.style.WARNING("Clearing existing seed data..."))
         
-        # Clear all related data
+        # Clear all related data in correct order (respect foreign key constraints)
+        Notification.objects.all().delete()
         Assignment.objects.all().delete()
         Transfer.objects.all().delete()
         CaseFeedback.objects.all().delete()
         CaseStatusHistory.objects.all().delete()
         Case.objects.all().delete()
+        Announcement.objects.all().delete()
+        Category.objects.all().delete()
         Office.objects.all().delete()
         RoleHierarchy.objects.all().delete()
         
@@ -154,16 +157,32 @@ class Command(BaseCommand):
         # Ensure admin is created AFTER groups are created
         admin = self._ensure_admin()
 
+        # Seed one user per role (except Admin which is already created)
         users_by_group = self._seed_users_per_group()
         citizens = users_by_group["Citizen"]
         staff_users = [u for g, lst in users_by_group.items() if g != "Citizen" for u in lst]
 
+        # Seed categories (required for cases)
+        categories = self._seed_categories(created_by=admin)
+        
+        # Seed offices
         offices = self._seed_offices()
-        cases = self._seed_cases(citizens=citizens, offices=offices, added_by=admin or random.choice(staff_users or citizens))
+        
+        # Seed cases (with categories)
+        cases = self._seed_cases(
+            citizens=citizens,
+            offices=offices,
+            categories=categories,
+            added_by=admin
+        )
+        
+        # Seed related data (2 of each)
         self._seed_status_history(cases)
         self._seed_feedback(cases, citizens)
         self._seed_transfers(cases, offices)
-        self._seed_assignments(cases, staff_users or citizens)
+        self._seed_assignments(cases, staff_users + [admin])
+        self._seed_announcements(admin, staff_users)
+        self._seed_notifications(staff_users + citizens + [admin])
 
         self.stdout.write(self.style.SUCCESS("✅ Seeding complete."))
 
@@ -299,7 +318,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"Updated hierarchy for '{role_name}' (Level {config['level']})"))
 
     def _ensure_admin(self):
-        """Create Admin user with Admin role (not superuser, uses group permissions)."""
+        """Create superuser with Admin role."""
         admin_email = "admin@cas.local"
         admin, created = User.objects.get_or_create(
             username="admin",
@@ -309,27 +328,29 @@ class Command(BaseCommand):
                 "last_name": "Admin",
                 "national_id": "99-ADMIN-000",
                 "phone_number": "+251900000000",
-                "is_staff": False,  # Not staff, uses group permissions
-                "is_superuser": False,  # Not superuser, uses group permissions
+                "is_staff": True,
+                "is_superuser": True,  # Superuser as requested
             },
         )
         if created:
             admin.set_password(PASSWORD)
             admin.save()
-            self.stdout.write(self.style.SUCCESS(f"Admin user created (admin@cas.local / {PASSWORD})"))
+            self.stdout.write(self.style.SUCCESS(f"Admin superuser created (admin@cas.local / {PASSWORD})"))
         else:
-            # Update password if user exists
+            # Update password and ensure superuser status if user exists
             admin.set_password(PASSWORD)
+            admin.is_staff = True
+            admin.is_superuser = True
+            admin.email = admin_email  # Ensure unique email
             admin.save()
-            self.stdout.write(self.style.SUCCESS(f"Admin user updated (admin@cas.local / {PASSWORD})"))
+            self.stdout.write(self.style.SUCCESS(f"Admin superuser updated (admin@cas.local / {PASSWORD})"))
         
         # Always assign Admin group (even if user already exists)
         try:
             admin_group = Group.objects.get(name="Admin")
-            # Clear existing groups and set only Admin group
             admin.groups.clear()
             admin.groups.add(admin_group)
-            self.stdout.write(self.style.SUCCESS(f"Admin group assigned to admin user."))
+            self.stdout.write(self.style.SUCCESS("Admin group assigned to admin user."))
         except Group.DoesNotExist:
             self.stdout.write(self.style.WARNING("Admin group not found. Run _ensure_groups first."))
         
@@ -337,16 +358,14 @@ class Command(BaseCommand):
 
     def _seed_users_per_group(self):
         """
-        Create 7 users per role (28 users for 4 roles: Citizen, Focal Person, Director, Mayor Office).
-        Admin user is created separately in _ensure_admin, so we skip Admin here.
-        Citizen users will be used as 'citizens' for cases.
+        Create 1 user per role (Citizen, Focal Person, Director, Mayor Office).
+        Admin user is created separately in _ensure_admin.
         Each user gets assigned to their role's group with appropriate permissions.
         """
         users_by_group = {}
-        base_counter = 1
 
-        # Seed users for each role in ROLE_PERMISSION_MATRIX (except Admin, which is created separately)
-        for role in ROLE_PERMISSION_MATRIX.keys():
+        # Seed one user for each role in ROLE_PERMISSION_MATRIX (except Admin)
+        for idx, role in enumerate(ROLE_PERMISSION_MATRIX.keys(), start=1):
             if role == "Admin":
                 continue  # Admin user is created separately in _ensure_admin
             try:
@@ -355,126 +374,146 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"Group '{role}' not found. Skipping user creation."))
                 continue
 
-            bucket = []
-            for i in range(1, 8):  # 1..7 users per role
-                suffix = uniq(base_counter)
-                # Generate username: handle multi-word roles like "Focal Person" -> "focalperson"
-                role_prefix = role.replace(" ", "").replace("-", "").lower()
-                username = f"{role_prefix}_{suffix}"
-                email = f"{username}@seed.local"
-                # National ID with role abbreviation
-                role_abbr = "".join([w[0] for w in role.split()[:2]]).upper()[:3]
-                nat_id = f"ID-{suffix}-{role_abbr}"
-                phone = f"+2519{random.randint(10,99)}{random.randint(1000000,9999999)}"
+            # Generate unique username and email
+            role_prefix = role.replace(" ", "").replace("-", "").lower()
+            username = f"{role_prefix}_user"
+            email = f"{username}@seed.local"
+            
+            # Ensure unique email by appending index if needed
+            counter = 1
+            while User.objects.filter(email=email).exists():
+                email = f"{username}{counter}@seed.local"
+                counter += 1
+            
+            # National ID with role abbreviation
+            role_abbr = "".join([w[0] for w in role.split()[:2]]).upper()[:3]
+            nat_id = f"ID-{idx:03d}-{role_abbr}"
+            phone = f"+2519{random.randint(10,99)}{random.randint(1000000,9999999)}"
 
-                user, created = User.objects.get_or_create(
-                    username=username,
-                    defaults={
-                        "email": email,
-                        "first_name": role.split()[0],
-                        "last_name": f"User{suffix}",
-                        "national_id": nat_id,
-                        "phone_number": phone,
-                        "status": "active",
-                    },
-                )
-                if created:
-                    user.set_password(PASSWORD)
-                    user.save()
-                    self.stdout.write(self.style.SUCCESS(f"  Created user: {username} ({role})"))
-                else:
-                    self.stdout.write(self.style.WARNING(f"  User {username} already exists, updating group membership."))
-                
-                # Ensure group membership (users inherit permissions from their group)
-                user.groups.set([grp])
-                bucket.append(user)
-                base_counter += 1
-            users_by_group[role] = bucket
-            self.stdout.write(self.style.SUCCESS(f"✓ Seeded {len(bucket)} users for '{role}' role."))
+            user, created = User.objects.get_or_create(
+                email=email,  # Use email as unique identifier
+                defaults={
+                    "username": username if not User.objects.filter(username=username).exists() else f"{username}_{counter}",
+                    "first_name": role.split()[0],
+                    "last_name": "User",
+                    "national_id": nat_id,
+                    "phone_number": phone,
+                    "status": "active",
+                },
+            )
+            if created:
+                user.set_password(PASSWORD)
+                user.save()
+                self.stdout.write(self.style.SUCCESS(f"  Created user: {user.username} ({role}) - {email}"))
+            else:
+                # Update username if needed
+                if not user.username or User.objects.filter(username=username).exclude(pk=user.pk).exists():
+                    user.username = f"{username}_{user.id}"
+                user.set_password(PASSWORD)
+                user.save()
+                self.stdout.write(self.style.WARNING(f"  User {user.username} already exists, updating group membership."))
+            
+            # Ensure group membership (users inherit permissions from their group)
+            user.groups.set([grp])
+            users_by_group[role] = [user]
+            self.stdout.write(self.style.SUCCESS(f"✓ Seeded 1 user for '{role}' role."))
 
         total_users = sum(len(users) for users in users_by_group.values())
         self.stdout.write(self.style.SUCCESS(f"✅ Total users seeded: {total_users} across {len(users_by_group)} roles."))
         return users_by_group
 
+    def _seed_categories(self, created_by):
+        """Create 2 sample categories for cases."""
+        categories_data = [
+            {"name": "Complaint", "description": "General complaint category"},
+            {"name": "Appeal", "description": "Appeal request category"},
+        ]
+        categories = []
+        for cat_data in categories_data:
+            category, created = Category.objects.get_or_create(
+                name=cat_data["name"],
+                defaults={
+                    "description": cat_data["description"],
+                    "is_active": True,
+                    "created_by": created_by,
+                }
+            )
+            categories.append(category)
+        self.stdout.write(self.style.SUCCESS("2 Categories seeded."))
+        return categories
+
     def _seed_offices(self):
+        """Create 2 sample offices."""
         names = [
-            "Kebele Office A",
-            "Kebele Office B",
-            "Wereda Office A",
-            "Wereda Office B",
-            "Sector Office A",
             "Directorate Office",
-            "President Office",
+            "Mayor Office",
         ]
         offices = []
         for name in names:
             office, _ = Office.objects.get_or_create(name=name)
             offices.append(office)
-        self.stdout.write(self.style.SUCCESS("7 Offices seeded."))
+        self.stdout.write(self.style.SUCCESS("2 Offices seeded."))
         return offices
 
-    def _seed_cases(self, citizens, offices, added_by):
+    def _seed_cases(self, citizens, offices, categories, added_by):
         """
-        Create 7 cases using random citizens and offices.
-        Mix of statuses and priorities.
+        Create 2 sample cases using citizens, offices, and categories.
         """
-        titles = [
-            "Service Delay Complaint",
-            "Water Supply Issue",
-            "ID Processing Complaint",
-            "Tax Clarification Request",
-            "Permit Appeal",
-            "Road Maintenance Complaint",
-            "Administrative Decision Appeal",
+        cases_data = [
+            {
+                "title": "Service Delay Complaint",
+                "description": "Citizen reported a delay in service delivery that needs urgent attention.",
+                "category": categories[0] if len(categories) > 0 else None,
+                "channel": "web",
+                "priority": "high",
+                "status": "pending",
+            },
+            {
+                "title": "Permit Appeal Request",
+                "description": "Citizen requesting appeal for a previously rejected permit application.",
+                "category": categories[1] if len(categories) > 1 else categories[0] if len(categories) > 0 else None,
+                "channel": "walk_in",
+                "priority": "medium",
+                "status": "in_investigation",
+            },
         ]
-        descriptions = [
-            "Detail about the reported issue with relevant references.",
-            "Citizen reported recurring problem affecting services.",
-            "Follow-up needed with respective office focal person.",
-            "Citizen requests clarification and faster resolution.",
-            "Escalated to upper office for review and action.",
-            "On-site assessment might be required.",
-            "Subject to leadership final review.",
-        ]
-        categories = ["complaint", "appeal", "other"]
-        channels = ["web", "walk_in", "phone"]
-        priorities = ["low", "medium", "high", "urgent"]
-        statuses = ["pending", "investigation", "resolved", "rejected", "closed"]
 
         cases = []
         now = timezone.now()
-        for idx in range(7):
-            citizen = random.choice(citizens)
-            office = random.choice(offices)
-            title = titles[idx]
-            desc = descriptions[idx]
-            category_id = random.choice(categories)
-            channel = random.choice(channels)
-            priority = random.choice(priorities)
-            status = random.choice(statuses)
+        for idx, case_data in enumerate(cases_data):
+            citizen = citizens[idx % len(citizens)] if citizens else None
+            office = offices[idx % len(offices)] if offices else None
+            
+            if not citizen:
+                self.stdout.write(self.style.WARNING("No citizens available for case creation. Skipping."))
+                continue
 
             case = Case.objects.create(
                 citizen_id=citizen,
                 office_id=office,
-                title=title,
-                description=desc,
-                category_id=category_id,
-                channel=channel,
-                priority=priority,
-                status=status,
+                title=case_data["title"],
+                description=case_data["description"],
+                category_id=case_data["category"],
+                channel=case_data["channel"],
+                priority=case_data["priority"],
+                status=case_data["status"],
                 added_by=added_by,
-                created_at=now - timedelta(days=random.randint(0, 20)),
+                created_at=now - timedelta(days=idx),
             )
             cases.append(case)
 
-        self.stdout.write(self.style.SUCCESS("7 Cases seeded."))
+        self.stdout.write(self.style.SUCCESS(f"{len(cases)} Cases seeded."))
         return cases
 
     def _seed_status_history(self, cases):
         """
-        Create at least one status history row per case (current status).
+        Create status history entries for cases (2 total).
         """
-        for case in cases:
+        if not cases:
+            return
+        
+        # Create status history for first 2 cases
+        for case in cases[:2]:
             CaseStatusHistory.objects.create(
                 case=case,
                 status=case.status,
@@ -484,9 +523,13 @@ class Command(BaseCommand):
 
     def _seed_feedback(self, cases, citizens):
         """
-        Create 7 feedback items. Ensure the target case is closed; if not, set to closed first.
+        Create 2 feedback items. Ensure the target case is closed; if not, set to closed first.
         """
-        targets = random.sample(cases, k=min(7, len(cases)))
+        if not cases:
+            return
+        
+        # Create feedback for first 2 cases (or as many as available)
+        targets = cases[:2]
         for case in targets:
             if case.status != "closed":
                 case.status = "closed"
@@ -497,10 +540,7 @@ class Command(BaseCommand):
             rating = random.randint(3, 5)
             comment = random.choice([
                 "Satisfied with the resolution.",
-                "Resolution acceptable.",
                 "Thanks for the prompt response.",
-                "Communication could be better, but resolved.",
-                "Appreciate the support.",
             ])
             # unique (case, created_by)
             CaseFeedback.objects.get_or_create(
@@ -508,22 +548,24 @@ class Command(BaseCommand):
                 created_by=owner,
                 defaults={"rating": rating, "comment": comment},
             )
-        self.stdout.write(self.style.SUCCESS("7 Feedbacks seeded."))
+        self.stdout.write(self.style.SUCCESS("2 Feedbacks seeded."))
 
     def _seed_transfers(self, cases, offices):
         """
-        Create 7 transfers, updating the case office to the new office.
+        Create 2 transfers, updating the case office to the new office.
         """
-        for _ in range(7):
-            case = random.choice(cases)
-            from_office = case.office_id or random.choice(offices)
-            to_office = random.choice([o for o in offices if o.id != from_office.id])
+        if not cases or len(offices) < 2:
+            return
+        
+        # Create transfers for first 2 cases
+        for idx, case in enumerate(cases[:2]):
+            from_office = case.office_id or offices[0]
+            # Select a different office for transfer
+            to_office = offices[1] if from_office == offices[0] else offices[0]
+            
             reason = random.choice([
                 "Escalation to next level",
                 "Re-routing to appropriate office",
-                "Workload balancing",
-                "Specialized handling required",
-                "Jurisdiction change",
             ])
             transfer = Transfer.objects.create(
                 case_id=case,
@@ -535,27 +577,33 @@ class Command(BaseCommand):
             case.office_id = to_office
             case.status_changed_by = case.added_by
             case.save(update_fields=["office_id", "status_changed_by"])
-        self.stdout.write(self.style.SUCCESS("7 Transfers seeded."))
+        self.stdout.write(self.style.SUCCESS("2 Transfers seeded."))
 
     def _seed_assignments(self, cases, staff_users):
         """
-        Create 7 assignments between staff users.
-        If staff list is empty, fall back to any users.
+        Create 2 assignments between staff users.
         """
-        pool = staff_users or list(User.objects.all())
+        if not cases:
+            return
+        
+        pool = [u for u in staff_users if u]  # Filter out None
         if len(pool) < 2:
             self.stdout.write(self.style.WARNING("Not enough staff users to create assignments. Skipping."))
             return
 
-        for _ in range(7):
-            case = random.choice(cases)
-            from_user, to_user = random.sample(pool, 2)
+        # Create assignments for first 2 cases
+        for idx, case in enumerate(cases[:2]):
+            if len(pool) >= 2:
+                from_user = pool[idx % len(pool)]
+                to_user = pool[(idx + 1) % len(pool)]
+                if from_user == to_user and len(pool) > 2:
+                    to_user = pool[(idx + 2) % len(pool)]
+            else:
+                continue
+                
             reason = random.choice([
                 "Workload balancing",
                 "Subject matter expertise",
-                "Schedule constraints",
-                "Follow-up required",
-                "Internal re-assignment",
             ])
             Assignment.objects.create(
                 case_id=case,
@@ -563,4 +611,74 @@ class Command(BaseCommand):
                 to_user_id=to_user,
                 reason=reason,
             )
-        self.stdout.write(self.style.SUCCESS("7 Assignments seeded."))
+        self.stdout.write(self.style.SUCCESS("2 Assignments seeded."))
+    
+    def _seed_announcements(self, created_by, staff_users):
+        """Create 2 sample announcements."""
+        announcements_data = [
+            {
+                "title": "System Maintenance Notice",
+                "content": "The system will undergo scheduled maintenance this weekend.",
+                "delivery_modes": ["in_app", "email"],
+            },
+            {
+                "title": "New Feature Announcement",
+                "content": "We are pleased to announce new features for case management.",
+                "delivery_modes": ["in_app"],
+            },
+        ]
+        
+        if not staff_users:
+            return
+        
+        admin_group = Group.objects.filter(name="Admin").first()
+        director_group = Group.objects.filter(name="Director").first()
+        
+        for ann_data in announcements_data:
+            announcement = Announcement.objects.create(
+                title=ann_data["title"],
+                content=ann_data["content"],
+                delivery_modes=ann_data["delivery_modes"],
+                is_active=True,
+                created_by=created_by,
+                updated_by=created_by,
+            )
+            # Assign to Admin and Director groups
+            if admin_group:
+                announcement.recipients_groups.add(admin_group)
+            if director_group:
+                announcement.recipients_groups.add(director_group)
+        
+        self.stdout.write(self.style.SUCCESS("2 Announcements seeded."))
+    
+    def _seed_notifications(self, users):
+        """Create 2 sample notifications."""
+        if not users:
+            return
+        
+        notification_data = [
+            {
+                "notification_type": "case_assigned",
+                "title": "New Case Assigned",
+                "message": "A new case has been assigned to you for review.",
+            },
+            {
+                "notification_type": "case_status",
+                "title": "Case Status Updated",
+                "message": "The status of one of your cases has been updated.",
+            },
+        ]
+        
+        # Assign notifications to first 2 users (or as many as available)
+        target_users = users[:2]
+        for idx, user in enumerate(target_users):
+            if idx < len(notification_data):
+                Notification.objects.create(
+                    user=user,
+                    notification_type=notification_data[idx]["notification_type"],
+                    title=notification_data[idx]["title"],
+                    message=notification_data[idx]["message"],
+                    is_read=False,
+                )
+        
+        self.stdout.write(self.style.SUCCESS("2 Notifications seeded."))

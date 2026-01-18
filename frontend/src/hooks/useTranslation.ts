@@ -74,6 +74,12 @@ export function useTranslation() {
         setCurrentLanguage(lang);
         if (typeof window !== "undefined") {
           localStorage.setItem("selectedLanguage", lang);
+          // Set cookie for server components to read
+          const expires = new Date();
+          expires.setTime(expires.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year
+          document.cookie = `selectedLanguage=${lang}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+          // Force page refresh to update server components with new language
+          window.location.reload();
         }
       });
     },
