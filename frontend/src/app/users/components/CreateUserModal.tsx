@@ -24,10 +24,12 @@ export function CreateUserModal({
   defaultRole = "Citizen",
 }: CreateUserModalProps) {
   const { t } = useTranslation();
+  const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [form, setForm] = useState<NewUserForm>({
     first_name: "",
     last_name: "",
     email: "",
+    password: "",
     phone_number: "",
     national_id: "",
     group: defaultRole,
@@ -61,6 +63,16 @@ export function CreateUserModal({
       errors.group = t("forms", "roleRequired");
     }
 
+    // Validate email and password if createLoginAccount is enabled
+    if (createLoginAccount) {
+      if (!form.email?.trim()) {
+        errors.email = t("forms", "emailRequired");
+      }
+      if (!form.password?.trim()) {
+        errors.password = t("forms", "passwordRequired");
+      }
+    }
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setFormError(t("forms", "fillRequiredFields"));
@@ -75,10 +87,12 @@ export function CreateUserModal({
         first_name: "",
         last_name: "",
         email: "",
+        password: "",
         phone_number: "",
         national_id: "",
         group: defaultRole,
       });
+      setCreateLoginAccount(false);
       setFieldErrors({});
       onClose();
     } catch (err: any) {
@@ -99,6 +113,16 @@ export function CreateUserModal({
   const handleClose = () => {
     setFormError("");
     setFieldErrors({});
+    setCreateLoginAccount(false);
+    setForm({
+      first_name: "",
+      last_name: "",
+      email: "",
+      password: "",
+      phone_number: "",
+      national_id: "",
+      group: defaultRole,
+    });
     onClose();
   };
 
@@ -167,50 +191,28 @@ export function CreateUserModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <Input
-              placeholder={`${t("forms", "email")} (${t("common", "optional")})`}
-              type="email"
-              value={form.email}
-              onChange={(e) => {
-                setForm((s) => ({ ...s, email: e.target.value }));
-                if (fieldErrors.email) {
-                  setFieldErrors((prev) => {
-                    const newErrors = { ...prev };
-                    delete newErrors.email;
-                    return newErrors;
-                  });
-                }
-              }}
-              className={fieldErrors.email ? "border-red-500" : ""}
-            />
-            {fieldErrors.email && (
-              <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>
-            )}
-          </div>
-          <div>
-            <Input
-              placeholder={`${t("forms", "phone")} *`}
-              value={form.phone_number}
-              onChange={(e) => {
-                setForm((s) => ({ ...s, phone_number: e.target.value }));
-                if (fieldErrors.phone_number) {
-                  setFieldErrors((prev) => {
-                    const newErrors = { ...prev };
-                    delete newErrors.phone_number;
-                    return newErrors;
-                  });
-                }
-              }}
-              className={fieldErrors.phone_number ? "border-red-500" : ""}
-              required
-            />
-            {fieldErrors.phone_number && (
-              <p className="mt-1 text-xs text-red-500">{fieldErrors.phone_number}</p>
-            )}
-          </div>
+        <div>
+          <Input
+            placeholder={`${t("forms", "phone")} *`}
+            value={form.phone_number}
+            onChange={(e) => {
+              setForm((s) => ({ ...s, phone_number: e.target.value }));
+              if (fieldErrors.phone_number) {
+                setFieldErrors((prev) => {
+                  const newErrors = { ...prev };
+                  delete newErrors.phone_number;
+                  return newErrors;
+                });
+              }
+            }}
+            className={fieldErrors.phone_number ? "border-red-500" : ""}
+            required
+          />
+          {fieldErrors.phone_number && (
+            <p className="mt-1 text-xs text-red-500">{fieldErrors.phone_number}</p>
+          )}
         </div>
+
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
@@ -237,10 +239,10 @@ export function CreateUserModal({
           {/* Role selection */}
           <div>
             <select
-              className={`w-full rounded border p-2 dark:border-dark-3 dark:bg-dark-2 ${
-                fieldErrors.group ? "border-red-500" : "border-gray-300"
+              className={`w-full rounded border border-gray-300 bg-white p-2 text-sm dark:border-dark-3 dark:bg-dark-2 dark:text-white ${
+                fieldErrors.group ? "border-red-500" : ""
               }`}
-              value={form.group}
+              value={form.group || ""}
               onChange={(e) => {
                 setForm((s) => ({ ...s, group: e.target.value }));
                 if (fieldErrors.group) {
@@ -263,8 +265,96 @@ export function CreateUserModal({
             {fieldErrors.group && (
               <p className="mt-1 text-xs text-red-500">{fieldErrors.group}</p>
             )}
+            {availableRoles.length === 0 && (
+              <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                {t("users", "noRolesAvailable")} - {t("common", "loading")}...
+              </p>
+            )}
           </div>
         </div>
+
+        {/* Create Login Account Toggle - moved to end */}
+        <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-3 dark:bg-dark-2">
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={createLoginAccount}
+              onChange={(e) => {
+                setCreateLoginAccount(e.target.checked);
+                if (!e.target.checked) {
+                  // Clear email and password when toggle is off
+                  setForm((s) => ({ ...s, email: "", password: "" }));
+                }
+              }}
+              className="peer sr-only"
+            />
+            <div className="relative">
+              <div className={`h-5 w-9 rounded-full transition-colors dark:bg-[#5A616B] ${
+                createLoginAccount ? "bg-primary" : "bg-gray-3"
+              }`} />
+              <div
+                className={`absolute -top-1 left-0 size-7 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.1)] transition-transform ${
+                  createLoginAccount
+                    ? "translate-x-full bg-primary dark:bg-white"
+                    : "translate-x-0"
+                }`}
+              />
+            </div>
+            <span className="flex-1 text-sm font-medium text-dark dark:text-white">
+              {t("users", "createLoginAccount")}
+            </span>
+          </label>
+        </div>
+
+        {/* Email and Password fields - only shown when toggle is on */}
+        {createLoginAccount && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <Input
+                placeholder={`${t("forms", "email")} *`}
+                type="email"
+                value={form.email}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, email: e.target.value }));
+                  if (fieldErrors.email) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.email;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.email ? "border-red-500" : ""}
+                required={createLoginAccount}
+              />
+              {fieldErrors.email && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                placeholder={`${t("forms", "password")} *`}
+                type="password"
+                value={form.password || ""}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, password: e.target.value }));
+                  if (fieldErrors.password) {
+                    setFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.password;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={fieldErrors.password ? "border-red-500" : ""}
+                required={createLoginAccount}
+              />
+              {fieldErrors.password && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.password}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <Button
           type="submit"

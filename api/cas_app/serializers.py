@@ -149,9 +149,26 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class CaseStatusHistorySerializer(serializers.ModelSerializer):
     changed_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    changed_by_name = serializers.SerializerMethodField()
+    changed_by_role = serializers.SerializerMethodField()
+    
     class Meta:
         model = CaseStatusHistory
-        fields = ["id", "status", "changed_at", "changed_by"]
+        fields = ["id", "status", "changed_at", "changed_by", "changed_by_name", "changed_by_role"]
+    
+    def get_changed_by_name(self, obj):
+        if obj.changed_by:
+            full_name = f"{obj.changed_by.first_name or ''} {obj.changed_by.last_name or ''}".strip()
+            return full_name or obj.changed_by.username or obj.changed_by.email or f"User {obj.changed_by.id}"
+        return "System"
+    
+    def get_changed_by_role(self, obj):
+        if obj.changed_by:
+            groups = obj.changed_by.groups.all()
+            if groups.exists():
+                # Return the first group name (primary role)
+                return groups.first().name
+        return None
 
 class CaseFeedbackSerializer(serializers.ModelSerializer):
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -208,6 +225,14 @@ class CaseSerializer(serializers.ModelSerializer):
     status_history = CaseStatusHistorySerializer(many=True, read_only=True)
     feedbacks      = CaseFeedbackSerializer(many=True, read_only=True)
     attachments = serializers.JSONField(required=False, allow_null=True)
+    
+    # User name fields for better frontend display
+    added_by_name = serializers.SerializerMethodField()
+    added_by_role = serializers.SerializerMethodField()
+    reported_by_name = serializers.SerializerMethodField()
+    reported_by_role = serializers.SerializerMethodField()
+    status_changed_by_name = serializers.SerializerMethodField()
+    status_changed_by_role = serializers.SerializerMethodField()
 
     def validate_attachments(self, value):
         """Custom validation for attachments field."""
@@ -240,7 +265,13 @@ class CaseSerializer(serializers.ModelSerializer):
             "status",
             "created_at",
             "added_by",
+            "added_by_name",
+            "added_by_role",
+            "reported_by_name",
+            "reported_by_role",
             "status_changed_by",
+            "status_changed_by_name",
+            "status_changed_by_role",
             "deleted_by",
             "last_seen_by",
             "status_history",
@@ -249,10 +280,58 @@ class CaseSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "created_at",
             "added_by",
+            "added_by_name",
+            "added_by_role",
+            "reported_by_name",
+            "reported_by_role",
             "status_changed_by",
+            "status_changed_by_name",
+            "status_changed_by_role",
             "deleted_by",
             "last_seen_by",
         ]
+    
+    def get_added_by_name(self, obj):
+        if obj.added_by:
+            full_name = f"{obj.added_by.first_name or ''} {obj.added_by.last_name or ''}".strip()
+            return full_name or obj.added_by.username or obj.added_by.email or f"User {obj.added_by.id}"
+        return None
+    
+    def get_added_by_role(self, obj):
+        if obj.added_by:
+            groups = obj.added_by.groups.all()
+            if groups.exists():
+                # Return the first group name (primary role)
+                return groups.first().name
+        return None
+    
+    def get_reported_by_name(self, obj):
+        if obj.reported_by:
+            full_name = f"{obj.reported_by.first_name or ''} {obj.reported_by.last_name or ''}".strip()
+            return full_name or obj.reported_by.username or obj.reported_by.email or f"User {obj.reported_by.id}"
+        return None
+    
+    def get_reported_by_role(self, obj):
+        if obj.reported_by:
+            groups = obj.reported_by.groups.all()
+            if groups.exists():
+                # Return the first group name (primary role)
+                return groups.first().name
+        return None
+    
+    def get_status_changed_by_name(self, obj):
+        if obj.status_changed_by:
+            full_name = f"{obj.status_changed_by.first_name or ''} {obj.status_changed_by.last_name or ''}".strip()
+            return full_name or obj.status_changed_by.username or obj.status_changed_by.email or f"User {obj.status_changed_by.id}"
+        return None
+    
+    def get_status_changed_by_role(self, obj):
+        if obj.status_changed_by:
+            groups = obj.status_changed_by.groups.all()
+            if groups.exists():
+                # Return the first group name (primary role)
+                return groups.first().name
+        return None
 
 
 class TransferSerializer(serializers.ModelSerializer):

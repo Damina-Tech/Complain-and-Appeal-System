@@ -27,11 +27,20 @@ export function useUsers() {
       });
       if (gr.ok) {
         const gjson = await gr.json();
-        const names: string[] = (Array.isArray(gjson) ? gjson : [])
-          .map((g: any) => g?.name)
+        // Handle paginated response
+        const groupsData = Array.isArray(gjson) ? gjson : (gjson.results || []);
+        const names: string[] = groupsData
+          .map((g: any) => g?.name || g)
           .filter(Boolean);
+        console.log("Loaded roles/groups:", names);
         setRoles(names);
       } else {
+        const errorText = await gr.text();
+        console.error("Failed to load groups:", gr.status, errorText);
+        // If it's a permission error, log it but don't show it as fatal
+        if (gr.status === 403) {
+          console.warn("No permission to view groups. User may not have access to role list.");
+        }
         setRoles([]); // non-fatal
       }
 

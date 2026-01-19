@@ -42,6 +42,5 @@ export type NewUserForm = {
   phone_number: string;
   national_id: string;
   group: string; // single-select for create
-  createLoginAccount?: boolean; // whether to create a login account
 };
 

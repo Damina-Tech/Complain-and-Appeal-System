@@ -29,6 +29,24 @@ type ApiCase = {
   assigned_to?: number | string | null;
   assignee_id?: number | string | null;
   responsible_id?: number | string | null;
+  citizen_id?: number | string | null;
+  added_by?: number | string | null;
+  added_by_name?: string | null;
+  added_by_role?: string | null;
+  reported_by?: number | string | null;
+  reported_by_name?: string | null;
+  reported_by_role?: string | null;
+  status_changed_by?: number | string | null;
+  status_changed_by_name?: string | null;
+  status_changed_by_role?: string | null;
+  status_history?: Array<{
+    id: number | string;
+    status: string;
+    changed_at: string;
+    changed_by: number | string;
+    changed_by_name?: string;
+    changed_by_role?: string;
+  }>;
 };
 
 type ApiOffice = { id: number | string; name: string };
@@ -43,32 +61,40 @@ type ApiUser = {
 
 /* ---------------- UI helpers ---------------- */
 const statusColors: Record<string, string> = {
-  Pending: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+  Draft: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  Submitted: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  Pending: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200", // Legacy support
   "In Investigation": "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   Resolved: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   Rejected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  Closed: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  Closed: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  "On Appeal": "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
 };
 
 const apiToUiStatus = (s?: string) => {
-  if (!s) return "Pending";
+  if (!s) return "Draft";
   const norm = s.toLowerCase();
   if (norm === "in_investigation" || norm === "in-investigation") return "In Investigation";
   return (
     {
-      pending: "Pending",
+      draft: "Draft",
+      submitted: "Submitted",
+      pending: "Submitted", // Legacy support
       resolved: "Resolved",
       rejected: "Rejected",
       closed: "Closed",
-    }[norm] || "Pending"
+      on_appeal: "On Appeal",
+    }[norm] || "Draft"
   );
 };
 const uiToApiStatus: Record<string, string> = {
-  Pending: "pending",
+  Draft: "draft",
+  Submitted: "submitted",
   "In Investigation": "in_investigation",
   Resolved: "resolved",
   Rejected: "rejected",
   Closed: "closed",
+  "On Appeal": "on_appeal",
 };
 
 const fetchAllPaginated = async <T,>(
@@ -211,6 +237,14 @@ export default function CaseViewPage() {
     (role) => role !== "Citizen"
   ) || (roleFromStorage && roleFromStorage !== "Citizen");
   
+  // Check if user is Director, Mayor Office, or Admin (for viewing tracking info)
+  const canViewTrackingInfo = currentUserGroups.some(
+    (role) => ["Director", "Mayor Office", "Admin"].includes(role)
+  ) || roleFromStorage === "Director" || roleFromStorage === "Mayor Office" || roleFromStorage === "Admin";
+  
+  // Check if current user is Admin
+  const isAdmin = currentUserGroups.includes("Admin") || roleFromStorage === "Admin";
+  
   // Check permissions dynamically via API
   const [userHierarchy, setUserHierarchy] = useState<{
     can_assign?: boolean;
@@ -239,7 +273,38 @@ export default function CaseViewPage() {
   // Dynamic permission checking
   const canManageCase = hasStaffRole; // Any non-citizen role can manage
   const canAssign = userHierarchy?.can_assign !== false; // Default to true if not configured
-  const canChangeStatus = userHierarchy?.can_change_status !== false; // Default to true if not configured
+  
+  /* -------- helpers to fetch ids of current user/office -------- */
+  const currentUserId =
+    (typeof window !== "undefined" && localStorage.getItem("user_id")) || "";
+  
+  // Check if current user can change status
+  // If case is assigned, only assigned user or Admin can change status
+  const isAssignedToCurrentUser = latestAssignment && currentUserId && String(latestAssignment.to_user_id) === String(currentUserId);
+  const canChangeStatus = userHierarchy?.can_change_status !== false && 
+    (isAdmin || !latestAssignment || isAssignedToCurrentUser);
+  
+  // Get valid next statuses based on current status
+  const getValidNextStatuses = (currentStatus: string): string[] => {
+    const statusFlow: Record<string, string[]> = {
+      draft: ["Submitted"],
+      submitted: ["In Investigation"],
+      "in_investigation": ["Resolved", "Rejected"],
+      resolved: ["Closed"],
+      rejected: ["Closed", "On Appeal"],
+      on_appeal: ["In Investigation", "Resolved", "Rejected"],
+      closed: [], // No transitions from closed
+    };
+    const normalizedStatus = currentStatus.toLowerCase().replace(/\s+/g, "_");
+    return statusFlow[normalizedStatus] || [];
+  };
+  
+  // Check if current user is the case creator
+  const isCaseCreator = caseData && currentUserId && String(caseData.added_by) === String(currentUserId);
+  
+  // Check if current user is citizen owner or reporter
+  const isCaseOwner = caseData && currentUserId && String(caseData.citizen_id) === String(currentUserId);
+  const isReporter = caseData && currentUserId && caseData.reported_by && String(caseData.reported_by) === String(currentUserId);
 
   /* -------- load data -------- */
   const loadCase = async () => {
@@ -559,7 +624,24 @@ export default function CaseViewPage() {
   };
 
   const openChangeStatus = () => {
-    setSelectedStatusUI(apiToUiStatus(caseData?.status));
+    const currentStatusUI = apiToUiStatus(caseData?.status);
+    // Convert validNextStatuses to UI format and auto-select the first one
+    const validNextStatusesUI = validNextStatuses.map(s => {
+      const normalized = s.toLowerCase().replace(/\s+/g, "_");
+      if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
+      return (
+        {
+          draft: "Draft",
+          submitted: "Submitted",
+          resolved: "Resolved",
+          rejected: "Rejected",
+          closed: "Closed",
+          on_appeal: "On Appeal",
+        }[normalized] || s
+      );
+    });
+    // Auto-select first valid next status, or keep current if no valid transitions
+    setSelectedStatusUI(validNextStatusesUI.length > 0 ? validNextStatusesUI[0] : currentStatusUI);
     setModalOpen("status");
   };
 
@@ -579,9 +661,6 @@ export default function CaseViewPage() {
   const TRANSFER_URL = API_URL ? `${API_URL}/transfers/` : "";
   const ASSIGN_URL = API_URL ? `${API_URL}/assignments/` : "";
 
-  /* -------- helpers to fetch ids of current user/office -------- */
-  const currentUserId =
-    (typeof window !== "undefined" && localStorage.getItem("user_id")) || "";
   const currentOfficeId =
     (typeof window !== "undefined" && localStorage.getItem("office_id")) ||
     (caseData?.office_id ? String(caseData.office_id) : "");
@@ -629,6 +708,8 @@ export default function CaseViewPage() {
       await loadCase();
       await loadOffices(); // Reload offices to update transfer display
       await loadLatestTransfer(); // Reload latest transfer
+      await loadMembers(); // Reload members to update assignment display
+      await loadLatestAssignment(); // Reload latest assignment (transfer creates assignment)
     } catch (e: any) {
       setError(e?.message || "Transfer failed");
     }
@@ -695,15 +776,23 @@ export default function CaseViewPage() {
     if (!API_URL || !token) return setError("Missing API URL or auth");
     try {
       setError("");
-      const apiStatus = uiToApiStatus[selectedStatusUI] || "pending";
-      const res = await fetch(`${API_URL}/cases/${id}/`, {
-        method: "PATCH",
+      const apiStatus = uiToApiStatus[selectedStatusUI] || "draft";
+      // Use the change_status endpoint which validates transitions
+      const res = await fetch(`${API_URL}/cases/${id}/change_status/`, {
+        method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ status: apiStatus }),
       });
       if (!res.ok) {
         const msg = await res.text();
-        throw new Error(msg || `Status update failed: ${res.status}`);
+        let errorMsg = msg || `Status update failed: ${res.status}`;
+        try {
+          const errorData = JSON.parse(msg);
+          errorMsg = errorData.detail || errorMsg;
+        } catch {
+          // Use text error message
+        }
+        throw new Error(errorMsg);
       }
       setModalOpen(null);
       setSuccessMsg("Status updated successfully.");
@@ -732,7 +821,7 @@ export default function CaseViewPage() {
         token,
       );
       setModalOpen(null);
-      setSuccessMsg("Appeal submitted successfully. A new case has been created for your appeal.");
+      setSuccessMsg("Appeal submitted successfully. The case status has been updated to 'On Appeal' and a new appeal case has been created.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadCase();
@@ -763,7 +852,7 @@ export default function CaseViewPage() {
         token,
       );
       setModalOpen(null);
-      setSuccessMsg("Feedback submitted successfully. Thank you for your feedback!");
+      setSuccessMsg("Feedback submitted successfully. The case has been automatically closed.");
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadCase();
@@ -821,7 +910,15 @@ export default function CaseViewPage() {
   }
 
   const titleCaseStatus = apiToUiStatus(caseData.status);
+  const isDraft = titleCaseStatus === "Draft";
+  const isSubmitted = titleCaseStatus === "Submitted";
+  const isResolved = titleCaseStatus === "Resolved";
+  const isRejected = titleCaseStatus === "Rejected";
   const isClosed = titleCaseStatus === "Closed";
+  const isOnAppeal = titleCaseStatus === "On Appeal";
+  
+  // Get valid next statuses for the status change modal
+  const validNextStatuses = getValidNextStatuses(caseData.status || "");
 
   return (
     <>
@@ -898,7 +995,7 @@ export default function CaseViewPage() {
                   <div
                     key={idx}
                     className="flex items-center justify-between rounded-md border border-stroke bg-gray-50 p-4 dark:border-dark-3 dark:bg-dark-2 hover:bg-gray-100 dark:hover:bg-dark-3 transition-colors"
-                  >
+                    >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="flex-shrink-0">
                         <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400" />
@@ -974,10 +1071,183 @@ export default function CaseViewPage() {
             </div>
           )}
 
+          {/* Tracking Information Section - Visible only to Director, Mayor Office, and Admin */}
+          {canViewTrackingInfo && (
+            <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-5 dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
+              <div className="mb-4 flex items-center gap-2">
+                <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900/30">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Case Tracking Information</h3>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {/* Created By */}
+                {caseData.added_by_name && (
+                  <div className="rounded-lg border border-blue-100 bg-white p-4 dark:border-blue-800 dark:bg-gray-800">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Created By
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {caseData.added_by_name}
+                      </p>
+                      {caseData.added_by_role && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          {caseData.added_by_role}
+                        </span>
+                      )}
+                    </div>
+                    {caseData.created_at && (
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {new Date(caseData.created_at).toLocaleString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Reported By */}
+                {caseData.reported_by_name && (
+                  <div className="rounded-lg border border-blue-100 bg-white p-4 dark:border-blue-800 dark:bg-gray-800">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Reported By
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {caseData.reported_by_name}
+                      </p>
+                      {caseData.reported_by_role && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          {caseData.reported_by_role}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Last Status Changed By */}
+                {caseData.status_changed_by_name && (
+                  <div className="rounded-lg border border-blue-100 bg-white p-4 dark:border-blue-800 dark:bg-gray-800">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Last Status Changed By
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {caseData.status_changed_by_name}
+                      </p>
+                      {caseData.status_changed_by_role && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          {caseData.status_changed_by_role}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status History Timeline */}
+              {caseData.status_history && Array.isArray(caseData.status_history) && caseData.status_history.length > 0 && (
+                <div className="mt-5">
+                  <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Status Change History</p>
+                  <div className="space-y-3">
+                    {caseData.status_history
+                      .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())
+                      .map((history, idx) => (
+                        <div
+                          key={history.id || idx}
+                          className="relative flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+                        >
+                          {/* Timeline indicator */}
+                          {idx < caseData.status_history!.length - 1 && (
+                            <div className="absolute left-4 top-8 h-full w-0.5 bg-gray-200 dark:bg-gray-700" />
+                          )}
+                          <div className="relative z-10 flex-shrink-0">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+                              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                                {apiToUiStatus(history.status).charAt(0)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded-full px-2 py-1 text-xs font-medium ${
+                                  statusColors[apiToUiStatus(history.status)] || ""
+                                }`}
+                              >
+                                {apiToUiStatus(history.status)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                              Changed by: <span className="font-medium">{history.changed_by_name || "System"}</span>
+                              {history.changed_by_role && (
+                                <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                                  {history.changed_by_role}
+                                </span>
+                              )}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                              {new Date(history.changed_at).toLocaleString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           {isCitizen ? (
             <div className="flex gap-3 pt-4">
-              {isClosed ? (
+              {isDraft && isCaseCreator ? (
+                <>
+                  <Button
+                    className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white"
+                    onClick={() => router.push(`/cases/${caseData.id}/edit`)}
+                  >
+                    Edit Draft
+                  </Button>
+                  <Button
+                    className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={async () => {
+                      if (!API_URL || !token) return setError("Missing API URL or auth");
+                      try {
+                        setError("");
+                        const res = await fetch(`${API_URL}/cases/${id}/submit/`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json", ...headers },
+                        });
+                        if (!res.ok) {
+                          const msg = await res.text();
+                          throw new Error(msg || `Submit failed: ${res.status}`);
+                        }
+                        setSuccessMsg("Case submitted successfully.");
+                        setSuccessOpen(true);
+                        setTimeout(() => setSuccessOpen(false), 3000);
+                        await loadCase();
+                      } catch (e: any) {
+                        setError(e?.message || "Submit failed");
+                      }
+                    }}
+                  >
+                    Submit Case
+                  </Button>
+                </>
+              ) : isResolved && (isCaseOwner || isReporter) ? (
                 <>
                   <Button
                     className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -993,6 +1263,17 @@ export default function CaseViewPage() {
                     Give Feedback
                   </Button>
                 </>
+              ) : isRejected && (isCaseOwner || isReporter) ? (
+                <Button
+                  className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
+                  onClick={openAppeal}
+                >
+                  Submit Appeal
+                </Button>
+              ) : isClosed ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                  This case is closed. No further actions are available.
+                </p>
               ) : (
                 <Button
                   className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white"
@@ -1006,34 +1287,73 @@ export default function CaseViewPage() {
             canManageCase && (
               <>
                 <div className="flex flex-wrap gap-3 pt-4">
-                  {canTransfer && (
+                  {canTransfer && !isClosed && (
                 <Button
                   variant="outline"
                       className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openTransfer}
-                      disabled={!!latestTransfer}
-                      title={latestTransfer ? "Case has already been transferred. Delete the transfer record to enable this action." : "Transfer case to another office"}
+                      disabled={!!latestTransfer || isClosed}
+                      title={isClosed ? "Cannot transfer closed cases" : latestTransfer ? "Case has already been transferred. Delete the transfer record to enable this action." : "Transfer case to another office"}
                 >
                   Transfer
                 </Button>
                   )}
-                  {canAssign && (
+                  {canAssign && !isClosed && (
                 <Button
                       className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openAssign}
-                      disabled={!!latestAssignment}
-                      title={latestAssignment ? "Case has already been assigned. Delete the assignment record to enable this action." : "Assign case to a user"}
+                      disabled={!!latestAssignment || isClosed}
+                      title={isClosed ? "Cannot assign closed cases" : latestAssignment ? "Case has already been assigned. Delete the assignment record to enable this action." : "Assign case to a user"}
                 >
                   Assign
                 </Button>
                   )}
-                  {canChangeStatus && (
+                  {canChangeStatus && !isClosed && (
                 <Button
-                  className="rounded-lg bg-green-600 hover:bg-green-700 text-white"
+                  className="rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openChangeStatus}
+                  disabled={!!(latestAssignment && !isAdmin && !isAssignedToCurrentUser) || isClosed}
+                  title={
+                    isClosed
+                      ? "Cannot change status of closed cases"
+                      : latestAssignment && !isAdmin && !isAssignedToCurrentUser
+                      ? "Only the assigned user or Admin can change status of an assigned case"
+                      : "Change case status"
+                  }
                 >
                   Change Status
                 </Button>
+                  )}
+                  {/* Show feedback/appeal buttons for resolved/rejected cases */}
+                  {isResolved && (isCaseOwner || isReporter || isAssignedToCurrentUser || isAdmin) && (
+                    <>
+                      <Button
+                        className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
+                        onClick={openAppeal}
+                      >
+                        Submit Appeal
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="rounded-lg"
+                        onClick={openFeedback}
+                      >
+                        Record Feedback
+                      </Button>
+                    </>
+                  )}
+                  {isRejected && (isCaseOwner || isReporter) && (
+                    <Button
+                      className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white"
+                      onClick={openAppeal}
+                    >
+                      Submit Appeal
+                    </Button>
+                  )}
+                  {isClosed && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                      This case is closed. No further actions are available.
+                    </p>
                   )}
               </div>
 
@@ -1260,18 +1580,68 @@ export default function CaseViewPage() {
         maxWidthClassName="max-w-md"
       >
         <div className="space-y-2 max-h-64 overflow-y-auto">
-          {["Pending", "In Investigation", "Resolved", "Rejected", "Closed"].map((s) => (
-            <label key={s} className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="status"
-                value={s}
-                checked={selectedStatusUI === s}
-                onChange={() => setSelectedStatusUI(s)}
-              />
-              <span>{s}</span>
-            </label>
-          ))}
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+            Current status: <span className="font-semibold">{titleCaseStatus}</span>
+          </p>
+          {(() => {
+            // Define all possible statuses in order
+            const allStatuses = ["Draft", "Submitted", "In Investigation", "Resolved", "Rejected", "Closed", "On Appeal"];
+            
+            // Convert validNextStatuses (API format) to UI format
+            const validNextStatusesUI = validNextStatuses.map(s => {
+              // Convert API status to UI status format
+              const normalized = s.toLowerCase().replace(/\s+/g, "_");
+              if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
+              return (
+                {
+                  draft: "Draft",
+                  submitted: "Submitted",
+                  resolved: "Resolved",
+                  rejected: "Rejected",
+                  closed: "Closed",
+                  on_appeal: "On Appeal",
+                }[normalized] || s
+              );
+            });
+            
+            return allStatuses.map((status) => {
+              const isValid = validNextStatusesUI.includes(status);
+              const isSelected = selectedStatusUI === status;
+              const isCurrent = titleCaseStatus === status;
+              
+              return (
+                <label
+                  key={status}
+                  className={`flex items-center gap-2 p-2 rounded transition-colors ${
+                    isValid
+                      ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                      : "cursor-not-allowed opacity-50"
+                  } ${isCurrent ? "bg-blue-50 dark:bg-blue-900/20" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="status"
+                    value={status}
+                    checked={isSelected}
+                    onChange={() => {
+                      if (isValid) {
+                        setSelectedStatusUI(status);
+                      }
+                    }}
+                    disabled={!isValid}
+                    className={!isValid ? "cursor-not-allowed" : ""}
+                  />
+                  <span className={`flex-1 ${isCurrent ? "font-semibold" : ""}`}>
+                    {status}
+                    {isCurrent && <span className="ml-2 text-xs text-gray-500">(Current)</span>}
+                  </span>
+                  {!isValid && !isCurrent && (
+                    <span className="text-xs text-gray-400 italic">Not available</span>
+                  )}
+                </label>
+              );
+            });
+          })()}
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
@@ -1279,8 +1649,30 @@ export default function CaseViewPage() {
             Cancel
           </Button>
           <Button
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={handleChangeStatus}
+            disabled={
+              validNextStatuses.length === 0 || 
+              selectedStatusUI === titleCaseStatus ||
+              !(() => {
+                // Convert validNextStatuses to UI format for comparison
+                const validNextStatusesUI = validNextStatuses.map(s => {
+                  const normalized = s.toLowerCase().replace(/\s+/g, "_");
+                  if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
+                  return (
+                    {
+                      draft: "Draft",
+                      submitted: "Submitted",
+                      resolved: "Resolved",
+                      rejected: "Rejected",
+                      closed: "Closed",
+                      on_appeal: "On Appeal",
+                    }[normalized] || s
+                  );
+                });
+                return validNextStatusesUI.includes(selectedStatusUI);
+              })()
+            }
           >
             Confirm
           </Button>
@@ -1305,7 +1697,9 @@ export default function CaseViewPage() {
               className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
             />
             <p className="mt-1 text-xs text-gray-500">
-              A new appeal case will be created based on your original case.
+              {isRejected 
+                ? "A new appeal case will be created and the current case status will be set to 'On Appeal'."
+                : "A new appeal case will be created and the current case status will be set to 'On Appeal'."}
             </p>
           </div>
 
@@ -1350,10 +1744,16 @@ export default function CaseViewPage() {
       <AnimatedModal
         open={modalOpen === "feedback"}
         onClose={() => setModalOpen(null)}
-        title="Give Feedback"
+        title={isCitizen ? "Give Feedback" : "Record Feedback"}
         maxWidthClassName="max-w-md"
       >
         <div className="space-y-4">
+          {isResolved && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+              <p className="font-medium">Note:</p>
+              <p className="mt-1">Submitting feedback will automatically close this case.</p>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium">Rating *</label>
             <div className="flex gap-2">
@@ -1387,7 +1787,7 @@ export default function CaseViewPage() {
             <textarea
               value={feedbackComment}
               onChange={(e) => setFeedbackComment(e.target.value)}
-              placeholder="Share your thoughts about how this case was handled..."
+              placeholder={isCitizen ? "Share your thoughts about how this case was handled..." : "Record feedback received from the citizen..."}
               rows={4}
               className="w-full rounded border border-gray-300 p-2 dark:border-dark-3 dark:bg-dark-2"
             />

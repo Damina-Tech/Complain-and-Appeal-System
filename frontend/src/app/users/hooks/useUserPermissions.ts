@@ -169,14 +169,27 @@ export function useUserPermissions() {
   }, [canEditUser, isAdmin, isDirector, isMayorOffice, currentUserGroups]);
 
   // Available roles for creation based on current user's role
+  // Rule: Users cannot create users with same or higher hierarchy level
   const getAvailableRolesForCreation = useCallback((roles: string[]) => {
+    // Determine current user's hierarchy level
+    let currentUserLevel = 0;
     if (isAdmin) {
-      return roles; // Admin can create any role
-    } else if (isDirector || isMayorOffice) {
-      // Director and Mayor Office can only create Focal Person and Citizen
-      return roles.filter((r) => r === "Focal Person" || r === "Citizen");
+      currentUserLevel = hierarchyLevels["Admin"];
+    } else if (isMayorOffice) {
+      currentUserLevel = hierarchyLevels["Mayor Office"];
+    } else if (isDirector) {
+      currentUserLevel = hierarchyLevels["Director"];
+    } else {
+      // Focal Person or others cannot create users
+      return [];
     }
-    return []; // Focal Person cannot create users
+
+    // Filter roles: only allow roles with lower hierarchy level (strictly less than)
+    return roles.filter((role) => {
+      const roleLevel = hierarchyLevels[role];
+      // Only include roles that have a valid level AND are lower than current user's level
+      return roleLevel !== undefined && roleLevel < currentUserLevel;
+    });
   }, [isAdmin, isDirector, isMayorOffice]);
 
   return {

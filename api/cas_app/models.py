@@ -112,7 +112,7 @@ class Case(models.Model):
     category_id     = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="cases", db_column="category_id")
     channel         = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="web")
     priority        = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
-    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
     attachments     = models.JSONField(default=list, blank=True)  # list of file URLs or IDs
 
     # Tracking

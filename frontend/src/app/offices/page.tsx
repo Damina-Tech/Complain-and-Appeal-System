@@ -203,7 +203,7 @@ export default function OfficesPage() {
     }
   };
 
-  const loadRepresentatives = async (officeRows: OfficeRow[] = offices) => {
+  const loadRepresentatives = async (officeRows: OfficeRow[] = offices, currentOfficeId?: string | number) => {
     if (!API_URL) return;
     try {
       setRepsLoading(true);
@@ -211,12 +211,17 @@ export default function OfficesPage() {
 
       const optionMap = new Map<string, { id: string | number; label: string }>();
 
-      // Collect existing representative IDs to keep them in the list even if they're Citizens
+      // Collect existing representative IDs - these are users already representing other offices
       const existingRepIds = new Set(
         officeRows
-          .filter((o) => o.representative_id !== "")
+          .filter((o) => o.representative_id !== "" && String(o.id) !== String(currentOfficeId))
           .map((o) => String(o.representative_id))
       );
+
+      // Collect the current office's representative ID to keep them available
+      const currentOfficeRepId = currentOfficeId
+        ? officeRows.find((o) => String(o.id) === String(currentOfficeId))?.representative_id
+        : undefined;
 
       (users || []).forEach((u) => {
         const userId = String(u.id);
@@ -225,9 +230,24 @@ export default function OfficesPage() {
           typeof g === "string" ? g : g?.name || ""
         ).filter(Boolean);
         
-        // Skip if user has Citizen role, UNLESS they're already an existing representative
-        if (groupNames.includes("Citizen") && !existingRepIds.has(userId)) {
-          return;
+        // Skip if user has Citizen role
+        if (groupNames.includes("Citizen")) {
+          // But allow if they're the current office's representative
+          if (currentOfficeRepId && String(currentOfficeRepId) === userId) {
+            // Allow current office's representative even if Citizen
+          } else {
+            return; // Skip Citizen users
+          }
+        }
+        
+        // Skip if user is already a representative for another office
+        // (but allow if they're the current office's representative)
+        if (existingRepIds.has(userId)) {
+          if (currentOfficeRepId && String(currentOfficeRepId) === userId) {
+            // Allow current office's representative
+          } else {
+            return; // Skip users who are already representatives elsewhere
+          }
         }
         
         const label =
@@ -238,18 +258,19 @@ export default function OfficesPage() {
         optionMap.set(userId, { id: u.id, label });
       });
 
-      // Add existing representatives that might not be in the users list
-      officeRows.forEach((o) => {
-        if (o.representative_id !== "") {
-          const key = String(o.representative_id);
+      // Add existing representatives that might not be in the users list (for current office only)
+      if (currentOfficeId) {
+        const currentOffice = officeRows.find((o) => String(o.id) === String(currentOfficeId));
+        if (currentOffice && currentOffice.representative_id !== "") {
+          const key = String(currentOffice.representative_id);
           if (!optionMap.has(key)) {
             optionMap.set(key, {
-              id: o.representative_id,
-              label: o.representative_name || `User #${key}`,
+              id: currentOffice.representative_id,
+              label: currentOffice.representative_name || `User #${key}`,
             });
           }
         }
-      });
+      }
 
       const options = Array.from(optionMap.values()).sort((a, b) =>
         a.label.localeCompare(b.label),
@@ -391,7 +412,7 @@ export default function OfficesPage() {
 
   /* ------------- Details / Edit / Delete ------------- */
 
-  const openDetailsModal = (row: OfficeRow) => {
+  const openDetailsModal = async (row: OfficeRow) => {
     setSelected(row);
     setEditForm({
       name: row.name,
@@ -403,6 +424,8 @@ export default function OfficesPage() {
     setDetailsError("");
     setConfirmDelete(false);
     setOpenDetails(true);
+    // Reload representatives for this specific office (to show current rep even if they're already rep elsewhere)
+    await loadRepresentatives(offices, row.id);
   };
 
   const handleUpdate = async (e: React.FormEvent) => {

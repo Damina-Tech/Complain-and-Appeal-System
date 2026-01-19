@@ -53,17 +53,44 @@ export default function NotificationDetailPage() {
         });
 
         if (!res.ok) {
-          throw new Error(`${t("notifications", "failedToLoad")}: ${res.status}`);
+          // Try to get error message from response
+          let errorMsg = `${t("notifications", "failedToLoad")}: ${res.status}`;
+          try {
+            const errorData = await res.text();
+            if (errorData) {
+              try {
+                const parsed = JSON.parse(errorData);
+                errorMsg = parsed.detail || parsed.message || errorMsg;
+              } catch {
+                // Not JSON, use as is if meaningful
+                if (errorData.length < 200) {
+                  errorMsg = errorData;
+                }
+              }
+            }
+          } catch {
+            // Ignore error parsing
+          }
+          
+          if (res.status === 404) {
+            errorMsg = t("notifications", "notificationNotFound");
+          }
+          
+          throw new Error(errorMsg);
         }
 
         const data = await res.json();
-        setNotification(data);
+        
+        // Handle different response formats
+        const notificationData = data.results?.[0] || data;
+        setNotification(notificationData);
 
         // Mark as read if not already read
-        if (!data.is_read) {
+        if (!notificationData.is_read) {
           await markAsRead(id);
         }
       } catch (e: any) {
+        console.error("Error loading notification:", e);
         setError(e?.message || t("notifications", "failedToLoad"));
       } finally {
         setLoading(false);
@@ -71,7 +98,7 @@ export default function NotificationDetailPage() {
     };
 
     loadNotification();
-  }, [id, API_URL, token]);
+  }, [id, API_URL, token, t]);
 
   const markAsRead = async (notificationId: string) => {
     if (!API_URL || !token || markingRead) return;

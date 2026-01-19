@@ -354,7 +354,7 @@ export const translations = {
       reportedBy: "Reported By",
       assignedTo: "Assigned To",
       office: "Office",
-      addNew: "Add New",
+      addNew: "Add New Case",
       editCase: "Edit Case",
       viewCase: "View Case",
       deleteCase: "Delete Case",
@@ -513,6 +513,8 @@ export const translations = {
       createUserSuccess: "User created successfully. A reset password email will be sent if configured.",
       updateUserSuccess: "User updated successfully.",
       deleteUserSuccess: "User deleted successfully.",
+      createLoginAccount: "Create login account for this user",
+      noRolesAvailable: "No roles available",
     },
     am: {
       users: "ተጠቃሚዎች",
@@ -542,6 +544,8 @@ export const translations = {
       createUserSuccess: "ተጠቃሚ በተሳካ ሁኔታ ተፈጥሯል። የይለፍ ቃል ዳግም ማስጀመሪያ ኢሜይል ከተዋቀረ ይላካል።",
       updateUserSuccess: "ተጠቃሚ በተሳካ ሁኔታ ተዘምኗል።",
       deleteUserSuccess: "ተጠቃሚ በተሳካ ሁኔታ ተሰርዟል።",
+      createLoginAccount: "ለዚህ ተጠቃሚ የመግቢያ መለያ ፍጠር",
+      noRolesAvailable: "ምንም ሚናዎች የሉም",
     },
     om: {
       users: "Fayyadamtoota",
@@ -571,6 +575,8 @@ export const translations = {
       createUserSuccess: "Fayyadamtoo milkaa'inaan uumame. Imeelii jecha iccitii deebisuu yoo qophaa'e ergama.",
       updateUserSuccess: "Fayyadamtoo milkaa'inaan fooyya'iinsa.",
       deleteUserSuccess: "Fayyadamtoo milkaa'inaan haqame.",
+      createLoginAccount: "Galmee seenuu fayyadamtoota kanaaf uumuu",
+      noRolesAvailable: "Gaheewwan hin jiran",
     },
   },
 
@@ -936,6 +942,9 @@ export const translations = {
       caseStatus: "Case Status Change",
       caseAssigned: "Case Assigned",
       caseTransferred: "Case Transferred",
+      noMatchingNotifications: "No matching notifications found",
+      tryDifferentFilters: "Try adjusting your search or filters",
+      notificationsWillAppearHere: "Notifications will appear here when you receive them",
     },
     am: {
       title: "ማስታወቂያዎች",
@@ -969,6 +978,9 @@ export const translations = {
       caseStatus: "የጉዳይ ሁኔታ ለውጥ",
       caseAssigned: "ጉዳይ ተመድቧል",
       caseTransferred: "ጉዳይ ተላልፏል",
+      noMatchingNotifications: "የሚዛመዱ ማስታወቂያዎች አልተገኙም",
+      tryDifferentFilters: "የፍለጋ ወይም ማጣሪያዎችዎን ይለውጡ",
+      notificationsWillAppearHere: "ማስታወቂያዎች ሲደርሱዎት እዚህ ይታያሉ",
     },
     om: {
       title: "Beekumsa",
@@ -1002,6 +1014,9 @@ export const translations = {
       caseStatus: "Fooyya'iinsa Haala Dhimmoo",
       caseAssigned: "Dhimmoo Kenname",
       caseTransferred: "Dhimmoo Dabarfame",
+      noMatchingNotifications: "Beekumsa walitti fakkatu hin argamne",
+      tryDifferentFilters: "Barbaadi ykn filtarrii keessan jijjiirraa",
+      notificationsWillAppearHere: "Beekumsaan yommuu dhufan asitti agarsiifamu",
     },
   },
 

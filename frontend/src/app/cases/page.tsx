@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { TextAreaGroup } from "@/components/FormElements/InputGroup/text-area";
 import { AnimatedModal } from "@/components/ui/animated-modal";
@@ -31,11 +31,14 @@ type Attachment = { name: string; type: string; size: number; data: string; file
 
 // Title Case -> Tailwind badge classes
 const statusColors: Record<string, string> = {
-  Pending: "bg-gray-200 text-gray-800",
-  "In Investigation": "bg-blue-200 text-blue-800",
-  Resolved: "bg-green-200 text-green-800",
-  Rejected: "bg-red-200 text-red-800",
-  Closed: "bg-yellow-200 text-yellow-800",
+  Draft: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  Submitted: "bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  Pending: "bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200", // Legacy support
+  "In Investigation": "bg-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  Resolved: "bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200",
+  Rejected: "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200",
+  Closed: "bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  "On Appeal": "bg-orange-200 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
 };
 
 type ApiCase = {
@@ -91,7 +94,7 @@ export default function ComplaintAppealPage() {
     description: "",
     category: "",
     attachments: [],
-    status: "pending",
+    status: "draft",
     office: "",
     citizenId:
       typeof window !== "undefined" ? localStorage.getItem("user_id") : null,
@@ -103,19 +106,83 @@ export default function ComplaintAppealPage() {
   const [creatingUser, setCreatingUser] = useState(false);
   const [userFormError, setUserFormError] = useState("");
   const [userFieldErrors, setUserFieldErrors] = useState<Record<string, string>>({});
+  const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [userForm, setUserForm] = useState<{
     first_name: string;
     last_name: string;
     email: string;
+    password?: string;
     phone_number: string;
     national_id: string;
+    group: string;
   }>({
     first_name: "",
     last_name: "",
     email: "",
+    password: "",
     phone_number: "",
     national_id: "",
+    group: "Citizen",
   });
+
+  // Roles and permissions for user creation
+  const [roles, setRoles] = useState<string[]>([]);
+  const [loadingRoles, setLoadingRoles] = useState(false);
+  
+  // Current user groups for permissions
+  const currentUserGroups: string[] = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("user_groups");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((g) => (typeof g === "string" ? g : g?.name)).filter(Boolean);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const isAdmin = currentUserGroups.includes("Admin");
+  const isDirector = currentUserGroups.includes("Director");
+  const isMayorOffice = currentUserGroups.includes("Mayor Office");
+  
+  // Check if user can manage categories (Admin, Director, Mayor Office only)
+  const canManageCategories = isAdmin || isDirector || isMayorOffice;
+
+  // Hierarchy levels for role filtering
+  const hierarchyLevels: Record<string, number> = {
+    "Citizen": 1,
+    "Focal Person": 2,
+    "Director": 3,
+    "Mayor Office": 4,
+    "Admin": 5,
+  };
+
+  // Get available roles for creation based on current user's role
+  const availableRolesForCreation = useMemo(() => {
+    // Determine current user's hierarchy level
+    let currentUserLevel = 0;
+    if (isAdmin) {
+      currentUserLevel = hierarchyLevels["Admin"];
+    } else if (isMayorOffice) {
+      currentUserLevel = hierarchyLevels["Mayor Office"];
+    } else if (isDirector) {
+      currentUserLevel = hierarchyLevels["Director"];
+    } else {
+      // Focal Person or others cannot create users
+      return ["Citizen"]; // Default to Citizen only
+    }
+
+    // Filter roles: only allow roles with lower hierarchy level (strictly less than)
+    return roles.filter((role) => {
+      const roleLevel = hierarchyLevels[role];
+      // Only include roles that have a valid level AND are lower than current user's level
+      return roleLevel !== undefined && roleLevel < currentUserLevel;
+    });
+  }, [roles, isAdmin, isDirector, isMayorOffice]);
 
   // Users list for "Reported By" dropdown
   const [users, setUsers] = useState<Array<{ id: string | number; name: string; email: string }>>([]);
@@ -155,23 +222,6 @@ export default function ComplaintAppealPage() {
   const userId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
-  const currentUserGroups: string[] = useMemo(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem("user_groups");
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((g) => (typeof g === "string" ? g : g?.name))
-          .filter(Boolean);
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  }, []);
-
   const isCitizen = currentUserGroups.includes("Citizen");
 
   /** Fetch ALL pages of /cases/ (works for array OR DRF pagination {results,next}) */
@@ -205,6 +255,24 @@ export default function ComplaintAppealPage() {
     return all;
   };
 
+  // Helper function to convert API status to UI status
+  const apiToUiStatus = (s?: string): string => {
+    if (!s) return "Draft";
+    const norm = s.toLowerCase();
+    if (norm === "in_investigation" || norm === "in-investigation") return "In Investigation";
+    return (
+      {
+        draft: "Draft",
+        submitted: "Submitted",
+        pending: "Submitted", // Legacy support - map old pending to Submitted
+        resolved: "Resolved",
+        rejected: "Rejected",
+        closed: "Closed",
+        on_appeal: "On Appeal",
+      }[norm] || "Draft"
+    );
+  };
+
   const mapRow = (c: ApiCase): Row => {
     // Find category name from categories list or use category_id if it's an object
     let categoryName = "No Category";
@@ -224,7 +292,7 @@ export default function ComplaintAppealPage() {
       channel: c.channel || "web",
       priority: c.priority || "medium",
       date: (c.created_at ? String(c.created_at).slice(0, 10) : "").replace(/T.*/, ""),
-      status: (c.status || "pending").replace(/\b\w/g, (m: string) => m.toUpperCase()),
+      status: apiToUiStatus(c.status),
     };
   };
 
@@ -255,13 +323,30 @@ export default function ComplaintAppealPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingUsers(true);
-      const res = await fetch(`${API_URL}/users/`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
-      const data: any[] = await res.json();
-      const userList = (Array.isArray(data) ? data : []).map((u: any) => ({
+      // Fetch all users with pagination support
+      let allUsers: any[] = [];
+      let nextUrl: string | null = `${API_URL}/users/`;
+
+      while (nextUrl) {
+        const res = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
+        const data: any = await res.json();
+
+        if (Array.isArray(data)) {
+          allUsers = allUsers.concat(data);
+          nextUrl = null;
+        } else if (Array.isArray(data?.results)) {
+          allUsers = allUsers.concat(data.results);
+          nextUrl = data.next || null;
+        } else {
+          nextUrl = null;
+        }
+      }
+
+      const userList = allUsers.map((u: any) => ({
         id: u.id,
         name: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email || u.username || `User ${u.id}`,
         email: u.email || u.username || "",
@@ -269,6 +354,7 @@ export default function ComplaintAppealPage() {
       setUsers(userList);
     } catch (e: any) {
       console.error("Failed to load users:", e);
+      setUsers([]);
     } finally {
       setLoadingUsers(false);
     }
@@ -298,10 +384,40 @@ export default function ComplaintAppealPage() {
     }
   };
 
+  // Load roles for user creation
+  const loadRoles = async () => {
+    if (!API_URL || !token) return;
+    try {
+      setLoadingRoles(true);
+      const res = await fetch(`${API_URL}/groups/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        // Handle paginated response
+        const groupsData = Array.isArray(data) ? data : (data.results || []);
+        const roleNames: string[] = groupsData
+          .map((g: any) => g?.name || g)
+          .filter(Boolean);
+        setRoles(roleNames);
+      } else {
+        console.error("Failed to load roles:", res.status);
+        setRoles([]);
+      }
+    } catch (e: any) {
+      console.error("Failed to load roles:", e);
+      setRoles([]);
+    } finally {
+      setLoadingRoles(false);
+    }
+  };
+
   useEffect(() => {
     loadCases();
     loadUsers();
     loadCategories();
+    loadRoles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -390,12 +506,37 @@ export default function ComplaintAppealPage() {
             />
           </div>
 
-          <Button
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            onClick={() => setOpenDialog(true)}
-          >
-            + {t("cases", "addNew")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {canManageCategories && (
+              <>
+                <Button
+                  type="button"
+                  className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 whitespace-nowrap"
+                  onClick={() => setCategoryModalOpen(true)}
+                  title="Add New Category"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Category
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="px-4 py-2 rounded whitespace-nowrap border-gray-300 hover:bg-gray-100 dark:border-dark-3 dark:hover:bg-dark-2"
+                  onClick={() => router.push("/categories")}
+                  title="Manage Categories"
+                >
+                  <Settings className="h-4 w-4 mr-1" />
+                  Manage Categories
+                </Button>
+              </>
+            )}
+            <Button
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              onClick={() => setOpenDialog(true)}
+            >
+              + {t("cases", "addNew")}
+            </Button>
+          </div>
         </div>
 
         {/* Table */}
@@ -562,7 +703,7 @@ export default function ComplaintAppealPage() {
             description: "",
             category: "",
             attachments: [],
-            status: "pending",
+            status: "draft",
             office: "",
             citizenId:
               typeof window !== "undefined"
@@ -621,7 +762,7 @@ export default function ComplaintAppealPage() {
               if (form.category) {
                 formData.append("category_id", String(form.category));
               }
-              formData.append("status", form.status || "pending");
+              formData.append("status", form.status || "draft");
               if (form.office) formData.append("office_id", form.office);
               if (form.citizenId) formData.append("citizen_id", form.citizenId);
               if (form.reported_by) formData.append("reported_by", form.reported_by);
@@ -722,7 +863,7 @@ export default function ComplaintAppealPage() {
                 description: "",
                 category: "",
                 attachments: [],
-                status: "pending",
+                status: "draft",
                 office: "",
                 citizenId:
                   typeof window !== "undefined"
@@ -820,57 +961,63 @@ export default function ComplaintAppealPage() {
                 </SelectContent>
                 </Select>
               </div>
-              <Button
-                type="button"
-                onClick={() => setCategoryModalOpen(true)}
-                className="bg-green-600 text-white hover:bg-green-700 whitespace-nowrap"
-                title="Add New Category"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Category
-              </Button>
+              {canManageCategories && (
+                <Button
+                  type="button"
+                  onClick={() => setCategoryModalOpen(true)}
+                  className="bg-green-600 text-white hover:bg-green-700 whitespace-nowrap"
+                  title="Add New Category"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Category
+                </Button>
+              )}
             </div>
             {formErrors.category && (
               <p className="mt-1 text-sm text-red-500">{formErrors.category}</p>
             )}
           </div>
 
-          {/* Reported By Field */}
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Reported By (Optional)
-            </label>
-            <div className="flex gap-2">
-              <Select
-                value={form.reported_by || "none"}
-                onValueChange={(val) => setForm((s) => ({ ...s, reported_by: val === "none" ? null : val }))}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select user..." />
-                </SelectTrigger>
-                <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
-                  <SelectItem value="none">None</SelectItem>
-                  {loadingUsers ? (
-                    <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
-                  ) : (
-                    users.map((user) => (
-                      <SelectItem key={user.id} value={String(user.id)}>
-                        {user.name} {user.email ? `(${user.email})` : ""}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                onClick={() => setUserModalOpen(true)}
-                className="bg-green-600 text-white hover:bg-green-700 whitespace-nowrap"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add User
-              </Button>
+          {/* Reported By Field - Only visible to non-Citizen users */}
+          {!isCitizen && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Reported By (Optional)
+              </label>
+              <div className="flex gap-2">
+                <Select
+                  value={form.reported_by || "none"}
+                  onValueChange={(val) => setForm((s) => ({ ...s, reported_by: val === "none" ? null : val }))}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select user..." />
+                  </SelectTrigger>
+                  <SelectContent className="z-[10002]" position="popper" sideOffset={6}>
+                    <SelectItem value="none">None</SelectItem>
+                    {loadingUsers ? (
+                      <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
+                    ) : (
+                      users.map((user) => (
+                        <SelectItem key={user.id} value={String(user.id)}>
+                          {user.name} {user.email ? `(${user.email})` : ""}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {canManageCategories && (
+                  <Button
+                    type="button"
+                    onClick={() => setUserModalOpen(true)}
+                    className="bg-green-600 text-white hover:bg-green-700 whitespace-nowrap"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add User
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <label className="mb-1 block text-sm font-medium">
@@ -912,15 +1059,18 @@ export default function ComplaintAppealPage() {
           setUserModalOpen(false);
           setUserFormError("");
           setUserFieldErrors({});
+          setCreateLoginAccount(false);
           setUserForm({
             first_name: "",
             last_name: "",
             email: "",
+            password: "",
             phone_number: "",
             national_id: "",
+            group: "Citizen",
           });
         }}
-        title="Add New User"
+        title={t("users", "addNewUser")}
         maxWidthClassName="max-w-md"
       >
         <form
@@ -934,20 +1084,35 @@ export default function ComplaintAppealPage() {
             const errors: Record<string, string> = {};
             
             if (!userForm.first_name?.trim()) {
-              errors.first_name = "First name is required";
+              errors.first_name = t("forms", "firstNameRequired");
             }
             
             if (!userForm.last_name?.trim()) {
-              errors.last_name = "Last name is required";
+              errors.last_name = t("forms", "lastNameRequired");
             }
             
             if (!userForm.phone_number?.trim()) {
-              errors.phone_number = "Phone number is required";
+              errors.phone_number = t("forms", "phoneRequired");
+            }
+
+            // Validate role selection
+            if (!userForm.group?.trim()) {
+              errors.group = t("forms", "roleRequired");
+            }
+
+            // Validate email and password if createLoginAccount is enabled
+            if (createLoginAccount) {
+              if (!userForm.email?.trim()) {
+                errors.email = t("forms", "emailRequired");
+              }
+              if (!userForm.password?.trim()) {
+                errors.password = t("forms", "passwordRequired");
+              }
             }
 
             if (Object.keys(errors).length > 0) {
               setUserFieldErrors(errors);
-              setUserFormError("Please fill in all required fields");
+              setUserFormError(t("forms", "fillRequiredFields"));
               return;
             }
 
@@ -963,18 +1128,23 @@ export default function ComplaintAppealPage() {
             try {
               setCreatingUser(true);
 
+              const assignedRole = userForm.group || availableRolesForCreation[0] || "Citizen";
+              
               const payload: Record<string, any> = {
                 username: userForm.email || `${userForm.first_name.toLowerCase()}_${Date.now()}`,
                 first_name: userForm.first_name.trim(),
                 last_name: userForm.last_name.trim(),
                 phone_number: userForm.phone_number.trim(),
                 status: "active",
-                groups: ["Citizen"], // Default to Citizen role
+                groups: [assignedRole],
               };
 
               // Add optional fields only if they have values
               if (userForm.email?.trim()) {
                 payload.email = userForm.email.trim();
+              }
+              if (userForm.password?.trim()) {
+                payload.password = userForm.password.trim();
               }
               if (userForm.national_id?.trim()) {
                 payload.national_id = userForm.national_id.trim();
@@ -1102,12 +1272,15 @@ export default function ComplaintAppealPage() {
 
               // Close modal and reset form
               setUserModalOpen(false);
+              setCreateLoginAccount(false);
               setUserForm({
                 first_name: "",
                 last_name: "",
                 email: "",
+                password: "",
                 phone_number: "",
                 national_id: "",
+                group: "Citizen",
               });
               setUserFieldErrors({});
 
@@ -1138,7 +1311,7 @@ export default function ComplaintAppealPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Input
-                placeholder="First name *"
+                placeholder={`${t("forms", "firstName")} *`}
                 value={userForm.first_name}
                 onChange={(e) => {
                   setUserForm((s) => ({ ...s, first_name: e.target.value }));
@@ -1159,7 +1332,7 @@ export default function ComplaintAppealPage() {
             </div>
             <div>
               <Input
-                placeholder="Last name *"
+                placeholder={`${t("forms", "lastName")} *`}
                 value={userForm.last_name}
                 onChange={(e) => {
                   setUserForm((s) => ({ ...s, last_name: e.target.value }));
@@ -1180,100 +1353,177 @@ export default function ComplaintAppealPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <Input
-                placeholder="Email (optional)"
-                type="email"
-                value={userForm.email}
-                onChange={(e) => {
-                  setUserForm((s) => ({ ...s, email: e.target.value }));
-                  if (userFieldErrors.email) {
-                    setUserFieldErrors((prev) => {
-                      const newErrors = { ...prev };
-                      delete newErrors.email;
-                      return newErrors;
-                    });
-                  }
-                }}
-                className={userFieldErrors.email ? "border-red-500" : ""}
-              />
-              {userFieldErrors.email && (
-                <p className="mt-1 text-xs text-red-500">{userFieldErrors.email}</p>
-              )}
-            </div>
-            <div>
-              <Input
-                placeholder="Phone number *"
-                value={userForm.phone_number}
-                onChange={(e) => {
-                  setUserForm((s) => ({ ...s, phone_number: e.target.value }));
-                  if (userFieldErrors.phone_number) {
-                    setUserFieldErrors((prev) => {
-                      const newErrors = { ...prev };
-                      delete newErrors.phone_number;
-                      return newErrors;
-                    });
-                  }
-                }}
-                className={userFieldErrors.phone_number ? "border-red-500" : ""}
-                required
-              />
-              {userFieldErrors.phone_number && (
-                <p className="mt-1 text-xs text-red-500">{userFieldErrors.phone_number}</p>
-              )}
-            </div>
-          </div>
-
           <div>
             <Input
-              placeholder="National ID (optional)"
-              value={userForm.national_id}
+              placeholder={`${t("forms", "phone")} *`}
+              value={userForm.phone_number}
               onChange={(e) => {
-                setUserForm((s) => ({ ...s, national_id: e.target.value }));
-                if (userFieldErrors.national_id) {
+                setUserForm((s) => ({ ...s, phone_number: e.target.value }));
+                if (userFieldErrors.phone_number) {
                   setUserFieldErrors((prev) => {
                     const newErrors = { ...prev };
-                    delete newErrors.national_id;
+                    delete newErrors.phone_number;
                     return newErrors;
                   });
                 }
               }}
-              className={userFieldErrors.national_id ? "border-red-500" : ""}
+              className={userFieldErrors.phone_number ? "border-red-500" : ""}
+              required
             />
-            {userFieldErrors.national_id && (
-              <p className="mt-1 text-xs text-red-500">{userFieldErrors.national_id}</p>
+            {userFieldErrors.phone_number && (
+              <p className="mt-1 text-xs text-red-500">{userFieldErrors.phone_number}</p>
             )}
           </div>
 
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setUserModalOpen(false);
-                setUserFormError("");
-                setUserFieldErrors({});
-                setUserForm({
-                  first_name: "",
-                  last_name: "",
-                  email: "",
-                  phone_number: "",
-                  national_id: "",
-                });
-              }}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-green-600 text-white hover:bg-green-700"
-              disabled={creatingUser}
-            >
-              {creatingUser ? "Creating..." : "Create User"}
-            </Button>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <Input
+                placeholder={`${t("forms", "nationalId")} (${t("common", "optional")})`}
+                value={userForm.national_id}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, national_id: e.target.value }));
+                  if (userFieldErrors.national_id) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.national_id;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={userFieldErrors.national_id ? "border-red-500" : ""}
+              />
+              {userFieldErrors.national_id && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.national_id}</p>
+              )}
+            </div>
+
+            {/* Role selection */}
+            <div>
+              <select
+                className={`w-full rounded border border-gray-300 bg-white p-2 text-sm dark:border-dark-3 dark:bg-dark-2 dark:text-white ${
+                  userFieldErrors.group ? "border-red-500" : ""
+                }`}
+                value={userForm.group || ""}
+                onChange={(e) => {
+                  setUserForm((s) => ({ ...s, group: e.target.value }));
+                  if (userFieldErrors.group) {
+                    setUserFieldErrors((prev) => {
+                      const newErrors = { ...prev };
+                      delete newErrors.group;
+                      return newErrors;
+                    });
+                  }
+                }}
+                required
+              >
+                <option value="">{t("common", "select")} {t("users", "role")}</option>
+                {availableRolesForCreation.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              {userFieldErrors.group && (
+                <p className="mt-1 text-xs text-red-500">{userFieldErrors.group}</p>
+              )}
+              {availableRolesForCreation.length === 0 && (
+                <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                  {t("users", "noRolesAvailable")} - {t("common", "loading")}...
+                </p>
+              )}
+            </div>
           </div>
+
+          {/* Create Login Account Toggle - moved to end */}
+          <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-3 dark:bg-dark-2">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={createLoginAccount}
+                onChange={(e) => {
+                  setCreateLoginAccount(e.target.checked);
+                  if (!e.target.checked) {
+                    // Clear email and password when toggle is off
+                    setUserForm((s) => ({ ...s, email: "", password: "" }));
+                  }
+                }}
+                className="peer sr-only"
+              />
+              <div className="relative">
+                <div className={`h-5 w-9 rounded-full transition-colors dark:bg-[#5A616B] ${
+                  createLoginAccount ? "bg-primary" : "bg-gray-3"
+                }`} />
+                <div
+                  className={`absolute -top-1 left-0 size-7 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.1)] transition-transform ${
+                    createLoginAccount
+                      ? "translate-x-full bg-primary dark:bg-white"
+                      : "translate-x-0"
+                  }`}
+                />
+              </div>
+              <span className="flex-1 text-sm font-medium text-dark dark:text-white">
+                {t("users", "createLoginAccount")}
+              </span>
+            </label>
+          </div>
+
+          {/* Email and Password fields - only shown when toggle is on */}
+          {createLoginAccount && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <Input
+                  placeholder={`${t("forms", "email")} *`}
+                  type="email"
+                  value={userForm.email}
+                  onChange={(e) => {
+                    setUserForm((s) => ({ ...s, email: e.target.value }));
+                    if (userFieldErrors.email) {
+                      setUserFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.email;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={userFieldErrors.email ? "border-red-500" : ""}
+                  required={createLoginAccount}
+                />
+                {userFieldErrors.email && (
+                  <p className="mt-1 text-xs text-red-500">{userFieldErrors.email}</p>
+                )}
+              </div>
+              <div>
+                <Input
+                  placeholder={`${t("forms", "password")} *`}
+                  type="password"
+                  value={userForm.password || ""}
+                  onChange={(e) => {
+                    setUserForm((s) => ({ ...s, password: e.target.value }));
+                    if (userFieldErrors.password) {
+                      setUserFieldErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.password;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={userFieldErrors.password ? "border-red-500" : ""}
+                  required={createLoginAccount}
+                />
+                {userFieldErrors.password && (
+                  <p className="mt-1 text-xs text-red-500">{userFieldErrors.password}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <Button
+            type="submit"
+            className="w-full bg-blue-600 text-white hover:bg-blue-700"
+            disabled={creatingUser}
+          >
+            {creatingUser ? t("common", "loading") : t("users", "addNewUser")}
+          </Button>
         </form>
       </AnimatedModal>
 
@@ -1362,8 +1612,10 @@ export default function ComplaintAppealPage() {
               // Reload categories list
               await loadCategories();
 
-              // Set the newly created category as selected
-              setForm((s) => ({ ...s, category: String(newCategory.id) }));
+              // If the case creation modal is open, set the newly created category as selected
+              if (openDialog) {
+                setForm((s) => ({ ...s, category: String(newCategory.id) }));
+              }
 
               // Close modal and reset form
               setCategoryModalOpen(false);
@@ -1373,7 +1625,9 @@ export default function ComplaintAppealPage() {
               });
 
               // Show success message
-              setSuccessMsg("Category created successfully and selected.");
+              setSuccessMsg(openDialog 
+                ? "Category created successfully and selected." 
+                : "Category created successfully.");
               setSuccessOpen(true);
               setTimeout(() => setSuccessOpen(false), 3000);
             } catch (err: any) {

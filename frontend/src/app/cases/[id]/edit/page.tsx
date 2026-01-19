@@ -38,6 +38,10 @@ export default function EditCasePage() {
   }>({});
   const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
 
+  // Categories list
+  const [categories, setCategories] = useState<Array<{ id: string | number; name: string; description?: string }>>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
   // Attachments state
   const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>([]);
   const [replacements, setReplacements] = useState<Record<number, File | null>>({});
@@ -57,10 +61,21 @@ export default function EditCasePage() {
         });
         if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
         const c = await res.json();
+        
+        // Handle category_id - it might be a number, object with id, or null
+        let categoryId = "";
+        if (c?.category_id) {
+          if (typeof c.category_id === "object" && c.category_id?.id) {
+            categoryId = String(c.category_id.id);
+          } else if (typeof c.category_id === "number" || typeof c.category_id === "string") {
+            categoryId = String(c.category_id);
+          }
+        }
+        
         setCaseData({
           title: c?.title || "",
           description: c?.description || "",
-          category: c?.category_id || "complaint",
+          category: categoryId,
           status: c?.status || "pending",
           priority: c?.priority || "medium",
           channel: c?.channel || "web",
@@ -89,6 +104,37 @@ export default function EditCasePage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Load categories
+  const loadCategories = async () => {
+    if (!API_URL) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) return;
+    try {
+      setLoadingCategories(true);
+      const res = await fetch(`${API_URL}/categories/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`Failed to load categories: ${res.status}`);
+      const data: any = await res.json();
+      const categoryList = (Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description || "",
+      }));
+      setCategories(categoryList);
+    } catch (e: any) {
+      console.error("Failed to load categories:", e);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -178,11 +224,16 @@ export default function EditCasePage() {
       const payload: any = {
         title: caseData.title.trim(),
         description: caseData.description.trim(),
-        category_id: caseData.category,
         status: caseData.status,
         priority: caseData.priority,
         channel: caseData.channel,
       };
+      
+      // Only include category_id if a category is selected (and convert to number if needed)
+      if (caseData.category && caseData.category.trim() !== "") {
+        const categoryId = isNaN(Number(caseData.category)) ? caseData.category : Number(caseData.category);
+        payload.category_id = categoryId;
+      }
       const baseRes = await fetch(`${API_URL}/cases/${id}/`, {
         method: "PATCH",
         headers: {
@@ -399,13 +450,17 @@ export default function EditCasePage() {
             required
           >
             <option value="">Select Category</option>
-            <option value="land">Land</option>
-            <option value="education">Education</option>
-            <option value="infrastructure">Infrastructure</option>
-            <option value="healthcare">Healthcare</option>
-            <option value="water & sanitation">Water & Sanitation</option>
-            <option value="human right">Human Right</option>
-            <option value="other">Other</option>
+            {loadingCategories ? (
+              <option value="" disabled>Loading categories...</option>
+            ) : categories.length === 0 ? (
+              <option value="" disabled>No categories available</option>
+            ) : (
+              categories.map((cat) => (
+                <option key={cat.id} value={String(cat.id)}>
+                  {cat.name}
+                </option>
+              ))
+            )}
           </select>
           {fieldErrors.category && (
             <p className="mt-1 text-sm text-red-500">{fieldErrors.category}</p>

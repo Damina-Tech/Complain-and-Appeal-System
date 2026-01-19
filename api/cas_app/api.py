@@ -164,7 +164,8 @@ class UserViewSet(viewsets.ModelViewSet):
             if not (is_admin or is_director or is_mayor_office or self.request.user.is_staff or self.request.user.is_superuser):
                 raise PermissionDenied("You do not have permission to create users.")
             
-            # Validate role assignment
+            # Validate role assignment based on hierarchy levels
+            # Rule: Users cannot create users with same or higher hierarchy level
             requested_groups = serializer.validated_data.get("groups", [])
             if requested_groups:
                 requested_role_names = [g.name if hasattr(g, 'name') else str(g) for g in requested_groups]
@@ -172,17 +173,37 @@ class UserViewSet(viewsets.ModelViewSet):
                 if isinstance(requested_groups[0], str):
                     requested_role_names = requested_groups
                 
-                # Admin can create any role
+                # Define hierarchy levels
+                hierarchy_levels = {
+                    "Citizen": 1,
+                    "Focal Person": 2,
+                    "Director": 3,
+                    "Mayor Office": 4,
+                    "Admin": 5,
+                }
+                
+                # Determine current user's hierarchy level
+                current_user_level = 0
                 if is_admin:
-                    pass  # Allow any role
-                # Director and Mayor Office can only create Focal Person and Citizen
-                elif is_director or is_mayor_office:
-                    allowed_roles = {"Focal Person", "Citizen"}
-                    if not all(role in allowed_roles for role in requested_role_names):
-                        raise PermissionDenied(
-                            f"Director and Mayor Office can only create users with roles: Focal Person, Citizen. "
-                            f"Requested roles: {', '.join(requested_role_names)}"
-                        )
+                    current_user_level = 5
+                elif is_mayor_office:
+                    current_user_level = 4
+                elif is_director:
+                    current_user_level = 3
+                
+                # Check each requested role - must be lower than current user's level
+                invalid_roles = []
+                for role in requested_role_names:
+                    role_level = hierarchy_levels.get(role, 0)
+                    if role_level >= current_user_level:
+                        invalid_roles.append(role)
+                
+                if invalid_roles:
+                    raise PermissionDenied(
+                        f"You cannot create users with the same or higher role level. "
+                        f"Invalid roles: {', '.join(invalid_roles)}. "
+                        f"Your level: {current_user_level}"
+                    )
         
         # For self-registration, request.user may be Anonymous; added_by stays None.
         user = serializer.save(added_by=self.request.user if self.request.user.is_authenticated else None)
@@ -448,9 +469,14 @@ class CaseViewSet(viewsets.ModelViewSet):
         # Citizens only see their own cases
         if is_citizen(user):
             return qs.filter(citizen_id=user)
+        
+        # Staff/admins: Filter out Draft cases unless they are the creator
+        # Draft cases are only visible to their creator
+        qs = qs.exclude(status="draft")
+        # Include Draft cases created by the current user
+        qs = qs | Case.objects.filter(deleted_by__isnull=True, status="draft", added_by=user).select_related("citizen_id", "reported_by", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case").prefetch_related("status_history", "feedbacks")
 
-        # Staff/admins see all (already filtered by deleted_by__isnull)
-        return qs
+        return qs.distinct()
 
     def create(self, request, *args, **kwargs):
         # Handle file attachments if present in request.FILES
@@ -515,11 +541,14 @@ class CaseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # If the creator is a citizen, force the case owner to be themselves
         if is_citizen(self.request.user):
-            case = serializer.save(added_by=self.request.user, citizen_id=self.request.user)
+            # Citizens create cases as Draft by default
+            case = serializer.save(added_by=self.request.user, citizen_id=self.request.user, status="draft")
         else:
             # Staff/internal can create for any citizen; if citizen_id missing, default to current user
             citizen = serializer.validated_data.get("citizen_id") or self.request.user
-            case = serializer.save(added_by=self.request.user, citizen_id=citizen)
+            # If status is explicitly provided and not draft, use it; otherwise default to draft
+            status_value = serializer.validated_data.get("status", "draft")
+            case = serializer.save(added_by=self.request.user, citizen_id=citizen, status=status_value)
 
         CaseStatusHistory.objects.create(
             case=case,
@@ -554,6 +583,17 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         instance.refresh_from_db()
         if instance.status != previous_status:
+            # Validate status transition if status is being changed
+            if "status" in data:
+                valid_next_statuses = self._get_valid_next_statuses(previous_status)
+                if instance.status not in valid_next_statuses:
+                    # Revert status change
+                    instance.status = previous_status
+                    instance.save(update_fields=["status"])
+                    return Response({
+                        "detail": f"Invalid status transition. Current status: {previous_status}. Valid next statuses: {', '.join(valid_next_statuses) or 'none'}"
+                    }, status=400)
+            
             instance.status_changed_by = request.user
             instance.save(update_fields=["status_changed_by"])
             CaseStatusHistory.objects.create(
@@ -561,11 +601,51 @@ class CaseViewSet(viewsets.ModelViewSet):
                 status=instance.status,
                 changed_by=request.user
             )
+            # Send notifications for status change
+            self._send_status_change_notifications(instance, previous_status)
 
         return Response(self.get_serializer(instance).data)
 
     def perform_update(self, serializer):
         serializer.save()
+    
+    def _send_status_change_notifications(self, case_instance, old_status):
+        """
+        Helper method to send notifications when case status changes.
+        Sends notifications to:
+        1. Case owner (citizen_id) if they are a citizen
+        2. Reported by user if they have an active account (email and password)
+        """
+        # 1. Notify case owner (citizen_id) if they are a citizen
+        if case_instance.citizen_id:
+            citizen_owner = case_instance.citizen_id
+            if is_citizen(citizen_owner):
+                # Case owner is a citizen - send notification
+                Notification.objects.create(
+                    user=citizen_owner,
+                    notification_type="case_status",
+                    title=f"Case Status Updated",
+                    message=f"Your case '{case_instance.title or f'#{case_instance.id}'}' status has been changed from {old_status} to {case_instance.status}.",
+                    related_case_id=case_instance,
+                )
+        
+        # 2. Notify reported_by user if they have an active account (email and password)
+        if case_instance.reported_by and case_instance.reported_by != case_instance.citizen_id:
+            reported_by_user = case_instance.reported_by
+            # Check if user has email and password (can log in)
+            # A user can log in if they have an email and a password hash is set
+            has_email = bool(reported_by_user.email)
+            has_password = bool(reported_by_user.password)  # Django stores password hash, so if set, it's not empty
+            
+            if has_email and has_password:
+                # User has an active account - send notification
+                Notification.objects.create(
+                    user=reported_by_user,
+                    notification_type="case_status",
+                    title=f"Case Status Updated",
+                    message=f"The case '{case_instance.title or f'#{case_instance.id}'}' that you reported has been updated. Status changed from {old_status} to {case_instance.status}.",
+                    related_case_id=case_instance,
+                )
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()  # object permission checked
@@ -574,6 +654,46 @@ class CaseViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["deleted_by"])
         return Response({"message": "Case marked as deleted."}, status=status.HTTP_204_NO_CONTENT)
 
+    def _get_valid_next_statuses(self, current_status):
+        """
+        Returns list of valid next statuses based on current status.
+        Workflow: Draft → Submitted → In Investigation → Resolved/Rejected → Closed
+        On Appeal is a conditional state that can be set when appeal is submitted.
+        """
+        status_flow = {
+            "draft": ["submitted"],
+            "submitted": ["in_investigation"],
+            "in_investigation": ["resolved", "rejected"],
+            "resolved": ["closed"],
+            "rejected": ["closed", "on_appeal"],  # Can close or go to appeal
+            "on_appeal": ["in_investigation", "resolved", "rejected"],  # Appeal can restart investigation
+            "closed": [],  # No transitions from closed
+        }
+        return status_flow.get(current_status, [])
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """Submit a Draft case to change status to Submitted."""
+        instance = self.get_object()
+        
+        # Only the creator can submit their draft case
+        if instance.added_by_id != request.user.id:
+            return Response({"detail": "Only the case creator can submit this case."}, status=403)
+        
+        if instance.status != "draft":
+            return Response({"detail": f"Case is already {instance.status}. Only draft cases can be submitted."}, status=400)
+        
+        old_status = instance.status
+        instance.status = "submitted"
+        instance.status_changed_by = request.user
+        instance.save(update_fields=["status", "status_changed_by"])
+        CaseStatusHistory.objects.create(case=instance, status="submitted", changed_by=request.user)
+        
+        # Send notifications
+        self._send_status_change_notifications(instance, old_status)
+        
+        return Response(self.get_serializer(instance).data, status=200)
+
     @action(detail=True, methods=["post"])
     def change_status(self, request, pk=None):
         """POST { 'status': 'resolved' } -> updates status + records history (staff only)."""
@@ -581,16 +701,46 @@ class CaseViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Not permitted."}, status=403)
 
         instance = self.get_object()
+        
+        # Prevent status changes on closed cases
+        if instance.status == "closed":
+            return Response({"detail": "Cannot change status of a closed case."}, status=400)
+        
         new_status = request.data.get("status")
         valid = dict(Case.STATUS_CHOICES).keys()
         if new_status not in valid:
             return Response({"detail": f"Invalid status. Allowed: {', '.join(valid)}"}, status=400)
 
+        # Validate status transition
+        valid_next_statuses = self._get_valid_next_statuses(instance.status)
+        if new_status not in valid_next_statuses:
+            return Response({
+                "detail": f"Invalid status transition. Current status: {instance.status}. Valid next statuses: {', '.join(valid_next_statuses) or 'none'}"
+            }, status=400)
+
+        # Check if case is assigned - if so, only assigned user or Admin can change status
+        user_groups = [g.name for g in request.user.groups.all()]
+        is_admin = "Admin" in user_groups or request.user.is_superuser
+        
+        # Check for latest assignment
+        latest_assignment = Assignment.objects.filter(case_id=instance).order_by("-timestamp").first()
+        if latest_assignment and latest_assignment.to_user_id:
+            # Case is assigned - check if current user is the assignee or Admin
+            if not is_admin and latest_assignment.to_user_id.id != request.user.id:
+                return Response(
+                    {"detail": "Only the assigned user or Admin can change the status of an assigned case."},
+                    status=403
+                )
+
+        old_status = instance.status
         if instance.status != new_status:
             instance.status = new_status
             instance.status_changed_by = request.user
             instance.save(update_fields=["status", "status_changed_by"])
             CaseStatusHistory.objects.create(case=instance, status=new_status, changed_by=request.user)
+            
+            # Send notifications for status change
+            self._send_status_change_notifications(instance, old_status)
 
         return Response(self.get_serializer(instance).data, status=200)
 
@@ -604,10 +754,24 @@ class CaseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def submit_feedback(self, request, pk=None):
         case = self.get_object()  # object permission checked
-        if case.citizen_id_id != request.user.id:
-            return Response({"detail": "Only the case owner can submit feedback."}, status=403)
-        if case.status != "closed":
-            return Response({"detail": "Feedback can only be submitted after the case is Closed."}, status=400)
+        
+        # Check if user is citizen/reporter or assigned officer/admin
+        is_citizen_owner = case.citizen_id_id == request.user.id
+        is_reporter = case.reported_by_id == request.user.id if case.reported_by_id else False
+        
+        # Check if user is assigned officer or admin
+        user_groups = [g.name for g in request.user.groups.all()]
+        is_admin = "Admin" in user_groups or request.user.is_superuser
+        
+        latest_assignment = Assignment.objects.filter(case_id=case).order_by("-timestamp").first()
+        is_assigned_officer = latest_assignment and latest_assignment.to_user_id_id == request.user.id
+        
+        if not (is_citizen_owner or is_reporter or is_admin or is_assigned_officer):
+            return Response({"detail": "Only the case owner, reporter, assigned officer, or Admin can submit feedback."}, status=403)
+        
+        # Feedback can only be submitted when case is Resolved
+        if case.status != "resolved":
+            return Response({"detail": "Feedback can only be submitted when the case is Resolved."}, status=400)
 
         ser = CaseFeedbackSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -623,17 +787,33 @@ class CaseViewSet(viewsets.ModelViewSet):
         except IntegrityError:
             return Response({"detail": "Feedback already submitted for this case by this user."}, status=400)
 
-        CaseStatusHistory.objects.create(case=case, status=case.status, changed_by=request.user)
+        # Auto-close the case when feedback is submitted
+        old_status = case.status
+        case.status = "closed"
+        case.status_changed_by = request.user
+        case.save(update_fields=["status", "status_changed_by"])
+        CaseStatusHistory.objects.create(case=case, status="closed", changed_by=request.user)
+        
+        # Send notifications
+        self._send_status_change_notifications(case, old_status)
+        
         return Response(CaseFeedbackSerializer(feedback).data, status=201)
 
     @transaction.atomic
     @action(detail=True, methods=["post"])
     def submit_appeal(self, request, pk=None):
         base_case = self.get_object()  # object permission checked
-        if base_case.citizen_id_id != request.user.id:
-            return Response({"detail": "Only the case owner can submit an appeal."}, status=403)
-        if base_case.status != "closed":
-            return Response({"detail": "Appeal can only be submitted after the case is Closed."}, status=400)
+        
+        # Check if user is citizen owner or reporter
+        is_citizen_owner = base_case.citizen_id_id == request.user.id
+        is_reporter = base_case.reported_by_id == request.user.id if base_case.reported_by_id else False
+        
+        if not (is_citizen_owner or is_reporter):
+            return Response({"detail": "Only the case owner or reporter can submit an appeal."}, status=403)
+        
+        # Appeal can be submitted when case is Resolved or Rejected
+        if base_case.status not in ["resolved", "rejected"]:
+            return Response({"detail": "Appeal can only be submitted when the case is Resolved or Rejected."}, status=400)
 
         to_office_id = request.data.get("to_office_id")
         reason = request.data.get("reason", "")
@@ -645,6 +825,17 @@ class CaseViewSet(viewsets.ModelViewSet):
             except Office.DoesNotExist:
                 return Response({"detail": "to_office_id not found."}, status=400)
 
+        # Set the original case status to "on_appeal"
+        old_status = base_case.status
+        base_case.status = "on_appeal"
+        base_case.status_changed_by = request.user
+        base_case.save(update_fields=["status", "status_changed_by"])
+        CaseStatusHistory.objects.create(case=base_case, status="on_appeal", changed_by=request.user)
+        
+        # Send notifications for status change
+        self._send_status_change_notifications(base_case, old_status)
+
+        # Create appeal case
         appeal_case = Case.objects.create(
             parent_case=base_case,
             citizen_id=base_case.citizen_id,
@@ -652,10 +843,10 @@ class CaseViewSet(viewsets.ModelViewSet):
             category_id="appeal",
             channel="web",
             priority=base_case.priority,
-            status="pending",
+            status="submitted",  # Appeal case starts as submitted
             added_by=request.user,
         )
-        CaseStatusHistory.objects.create(case=appeal_case, status="pending", changed_by=request.user)
+        CaseStatusHistory.objects.create(case=appeal_case, status="submitted", changed_by=request.user)
 
         if reason:
             CaseFeedback.objects.create(case=appeal_case, created_by=request.user, rating=5, comment=f"[Appeal Reason] {reason}")
@@ -678,10 +869,44 @@ class OfficeViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
+        # Validate that the representative is not already representing another office
+        office_representative = serializer.validated_data.get("office_representative")
+        if office_representative:
+            # Check if this user is already a representative for another office
+            existing_office = Office.objects.filter(
+                office_representative=office_representative,
+                is_active=True
+            ).exclude(id=None).first()
+            
+            if existing_office:
+                raise PermissionDenied(
+                    f"User '{office_representative.get_full_name() or office_representative.email or office_representative.username}' "
+                    f"is already the representative for office '{existing_office.name}'. "
+                    f"A user cannot be a representative for more than one office."
+                )
+        
         # auto-attach who created the office
         serializer.save(added_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
+        # Validate that the representative is not already representing another office
+        office_representative = serializer.validated_data.get("office_representative")
+        current_office = serializer.instance  # The office being updated
+        
+        if office_representative:
+            # Check if this user is already a representative for another office (excluding current office)
+            existing_office = Office.objects.filter(
+                office_representative=office_representative,
+                is_active=True
+            ).exclude(id=current_office.id).first()
+            
+            if existing_office:
+                raise PermissionDenied(
+                    f"User '{office_representative.get_full_name() or office_representative.email or office_representative.username}' "
+                    f"is already the representative for office '{existing_office.name}'. "
+                    f"A user cannot be a representative for more than one office."
+                )
+        
         # update tracking
         serializer.save(updated_by=self.request.user)
 
@@ -807,16 +1032,26 @@ class TransferViewSet(viewsets.ModelViewSet):
         case.status_changed_by = self.request.user  # optional: who performed the transfer
         case.save(update_fields=["office_id", "status_changed_by"])
         
-        # Create notification for the target office representative
+        # Create assignment to the target office representative and send notification
         to_office = transfer.to_office_id
         if to_office and to_office.office_representative:
+            # Create assignment to the office representative
+            assignment = Assignment.objects.create(
+                case_id=case,
+                from_user_id=self.request.user,
+                to_user_id=to_office.office_representative,
+                reason=f"Case transferred to {to_office.name}. {transfer.reason or ''}".strip(),
+            )
+            
+            # Create notification for the target office representative
             Notification.objects.create(
                 user=to_office.office_representative,
                 notification_type="case_transferred",
                 title=f"Case Transferred to {to_office.name}",
-                message=f"Case '{case.title or f'#{case.id}'}' has been transferred to your office.",
+                message=f"Case '{case.title or f'#{case.id}'}' has been transferred to your office and assigned to you.",
                 related_case_id=case,
                 related_transfer_id=transfer,
+                related_assignment_id=assignment,
             )
 
     # Optional quick endpoint to fetch transfers of a case
@@ -932,25 +1167,30 @@ class AssignmentViewSet(viewsets.ModelViewSet):
     def assignable_users(self, request):
         """
         Get list of users that the current user can assign cases to.
-        - Director/Mayor Office: All users in any office (except Citizen)
+        - Admin/Director/Mayor Office: All users in any office (except Citizen)
         - Focal Person: Only users in their own office (except Citizen)
+        - Excludes the current user (cannot assign to self)
         """
         # Get current user's role groups
         current_user_groups = [g.name for g in request.user.groups.all()]
+        is_admin = "Admin" in current_user_groups
         is_director = "Director" in current_user_groups
         is_mayor_office = "Mayor Office" in current_user_groups
         is_focal_person = "Focal Person" in current_user_groups
         
-        # Base queryset: exclude Citizen role users
+        # Base queryset: exclude Citizen role users and the current user
         citizen_group = Group.objects.filter(name="Citizen").first()
         if citizen_group:
             qs = User.objects.exclude(groups=citizen_group).filter(is_active=True, is_deleted=False)
         else:
             qs = User.objects.filter(is_active=True, is_deleted=False)
         
+        # Exclude the current user (cannot assign to self)
+        qs = qs.exclude(pk=request.user.pk)
+        
         # Filter based on role
-        if is_director or is_mayor_office:
-            # Can assign to any office/users
+        if is_admin or is_director or is_mayor_office:
+            # Admin/Director/Mayor Office can assign to any office/users
             pass  # No additional filtering
         elif is_focal_person:
             # Can only assign to users in their own office
@@ -1517,7 +1757,11 @@ class NotificationViewSet(viewsets.ModelViewSet):
             "related_case_id", "related_case_id__title", "related_case_id__id"
         )
         
-        # Support "since" parameter to fetch only new notifications
+        # For retrieve (detail view), don't apply limit - allow access to any notification
+        if self.action == "retrieve":
+            return qs
+        
+        # Support "since" parameter to fetch only new notifications (for list view)
         since = self.request.query_params.get("since")
         if since:
             try:
@@ -1528,7 +1772,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
             except (ValueError, TypeError):
                 pass  # Ignore invalid since parameter
         
-        # Limit to last 30 notifications for performance
+        # Limit to last 30 notifications for performance (list view only)
         limit = int(self.request.query_params.get("limit", 30))
         return qs[:limit]
 

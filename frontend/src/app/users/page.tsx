@@ -146,6 +146,9 @@ export default function UsersPage() {
       if (form.email?.trim()) {
         payload.email = form.email.trim();
       }
+      if (form.password?.trim()) {
+        payload.password = form.password.trim();
+      }
       if (form.national_id?.trim()) {
         payload.national_id = form.national_id.trim();
       }
