@@ -11,7 +11,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True) 
     address = models.TextField(null=True, blank=True)  # Optional address field
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
-    office = models.ForeignKey('Office', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    office_id = models.ForeignKey('Office', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     last_seen = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, default='active')  # e.g
     deleted_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_users')
@@ -23,7 +23,7 @@ class User(AbstractUser):
     class Meta:
         indexes = [
             models.Index(fields=['status']),
-            models.Index(fields=['office', 'status']),
+            models.Index(fields=['office_id', 'status']),
             models.Index(fields=['email']),
             models.Index(fields=['is_deleted']),
         ]
@@ -94,11 +94,13 @@ class Case(models.Model):
         ("urgent", "Urgent"),
     ]
     STATUS_CHOICES = [
-        ("pending", "Pending"),  # newly created
+        ("draft", "Draft"),
+        ("submitted", "Submitted"),
         ("in_investigation", "In Investigation"),
         ("resolved", "Resolved"),
         ("rejected", "Rejected"),
         ("closed", "Closed"),
+        ("on_appeal", "On Appeal"),
     ]
 
     # Core fields (using *_id names where you asked)
@@ -180,6 +182,8 @@ class Transfer(models.Model):
     to_office_id    = models.ForeignKey(Office, on_delete=models.PROTECT, related_name="transfers_in")
     reason          = models.TextField(blank=True)
     timestamp       = models.DateTimeField(auto_now_add=True)
+    added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transfer_added")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transfer_updated")
 
     class Meta:
         ordering = ["-timestamp"]
@@ -196,10 +200,13 @@ class Assignment(models.Model):
     case_id       = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="assignments")
     from_user_id  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignments_out")
     to_user_id    = models.ForeignKey(User, on_delete=models.PROTECT, related_name="assignments_in")
+    office_id = models.ForeignKey(Office, on_delete=models.PROTECT, null=True, blank=True, related_name="assignments")
     reason        = models.TextField(blank=True)
     countdown_days      = models.DateField(null=True, blank=True)
     due_date      = models.DateField(null=True, blank=True)
     timestamp     = models.DateTimeField(auto_now_add=True)
+    added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignment_added")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignment_updated")
 
     class Meta:
         ordering = ["-timestamp"]

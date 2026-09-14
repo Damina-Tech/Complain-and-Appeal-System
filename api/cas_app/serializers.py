@@ -24,7 +24,7 @@ class UserSerializer(serializers.ModelSerializer):
             "id", "username", "first_name", "last_name", 
             "email", "phone_number", "national_id", "address",
             "profile_image", "profile_image_url",
-            "last_seen", "status",
+            "last_seen", "status", "office_id",
             "deleted_by", "added_by", "status_changed_by", 
             "created_at", "password", "groups"
         ]
@@ -43,7 +43,17 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         groups = validated_data.pop("groups", None)
-        user = User.objects.create_user(**validated_data)
+        password = validated_data.pop("password", None)
+        
+        # Create user without password first (if no password provided)
+        if password:
+            user = User.objects.create_user(password=password, **validated_data)
+        else:
+            # Create user without password (for users without login account)
+            user = User.objects.create(**validated_data)
+            # Set unusable password so user cannot login
+            user.set_unusable_password()
+            user.save()
 
         if groups:
             user.groups.set(groups)  # internal user creation with role
@@ -363,10 +373,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
     case_id = serializers.PrimaryKeyRelatedField(queryset=Case.objects.filter(deleted_by__isnull=True))
     from_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
     to_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    office_id = serializers.PrimaryKeyRelatedField(queryset=Office.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = Assignment
-        fields = ["id", "case_id", "from_user_id", "to_user_id", "reason", 'countdown_days', 'due_date', "timestamp"]
+        fields = ["id", "case_id", "from_user_id", "to_user_id", "office_id", "reason", 'countdown_days', 'due_date', "timestamp"]
         read_only_fields = ["timestamp"]
 
     def validate(self, attrs):

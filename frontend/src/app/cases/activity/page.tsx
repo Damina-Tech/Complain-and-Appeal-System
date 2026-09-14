@@ -53,6 +53,8 @@ type AssignmentRecord = {
   from_user_id?: number | string | null;
   to_user?: number | string | ApiUser | null;
   to_user_id?: number | string | null;
+  office?: number | string | ApiOffice | null;
+  office_id?: number | string | null;
   reason?: string | null;
   created_at?: string | null; // or timestamp if your API uses that
   timestamp?: string | null;
@@ -142,6 +144,24 @@ export default function CaseActivityPage() {
   // Current user context
   const currentUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") || "" : "";
   const currentOfficeId = typeof window !== "undefined" ? localStorage.getItem("office_id") || "" : "";
+  
+  // Current user groups for permissions
+  const currentUserGroups: string[] = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("user_groups");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((g) => (typeof g === "string" ? g : g?.name)).filter(Boolean);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }, []);
+  
+  const isFocalPerson = currentUserGroups.some((g) => g.includes("Focal Person"));
 
   // Which list to show
   const [mode, setMode] = useState<"transfer" | "assign">("transfer");
@@ -203,36 +223,61 @@ export default function CaseActivityPage() {
       setLoadingList(true);
       setError("");
 
-      // Adjust endpoints to your API if needed:
-      const transfersUrl =
-        currentOfficeId
-          ? `${API_URL}/transfers/?from_office_id=${encodeURIComponent(currentOfficeId)}`
-          : `${API_URL}/transfers/`;
+      // For Focal Person: filter by office_id
+      // For others: use existing filters or no filter
+      let transfersUrl = `${API_URL}/transfers/`;
+      let assignmentsUrl = `${API_URL}/assignments/`;
 
-      const assignmentsUrl =
-        currentUserId
-          ? `${API_URL}/assignments/?from_user_id=${encodeURIComponent(currentUserId)}`
-          : `${API_URL}/assignments/`;
+      // Focal Person: API will filter by office, but we can add query params for clarity
+      if (isFocalPerson && currentOfficeId) {
+        transfersUrl = `${API_URL}/transfers/?from_office_id=${encodeURIComponent(currentOfficeId)}`;
+        assignmentsUrl = `${API_URL}/assignments/?office_id=${encodeURIComponent(currentOfficeId)}`;
+      } else {
+        // Non-Focal Person: use existing filters
+        if (currentOfficeId) {
+          transfersUrl = `${API_URL}/transfers/?from_office_id=${encodeURIComponent(currentOfficeId)}`;
+        }
+        if (currentUserId) {
+          assignmentsUrl = `${API_URL}/assignments/?from_user_id=${encodeURIComponent(currentUserId)}`;
+        }
+      }
 
       const [t, a] = await Promise.all([
         fetchAllPaginated<TransferRecord>(transfersUrl, headers),
         fetchAllPaginated<AssignmentRecord>(assignmentsUrl, headers),
       ]);
 
-      // Client-side fallback filtering if the API didn't filter
-      const filteredT = currentOfficeId
-        ? t.filter((r) =>
+      // Client-side fallback filtering for Focal Person (in case API didn't filter)
+      let filteredT = t;
+      let filteredA = a;
+
+      if (isFocalPerson && currentOfficeId) {
+        // Focal Person: filter transfers by from_office_id
+        filteredT = t.filter((r) => {
+          const fromOfficeId = r.from_office_id ?? (typeof r.from_office === "object" ? r.from_office?.id : r.from_office);
+          return String(fromOfficeId) === String(currentOfficeId);
+        });
+
+        // Focal Person: filter assignments by office_id
+        filteredA = a.filter((r) => {
+          const officeId = r.office_id ?? (typeof (r as any).office === "object" ? (r as any).office?.id : (r as any).office);
+          return String(officeId) === String(currentOfficeId);
+        });
+      } else {
+        // Non-Focal Person: use existing client-side filters
+        if (currentOfficeId) {
+          filteredT = t.filter((r) =>
             String((r.from_office_id ?? (typeof r.from_office === "object" ? r.from_office?.id : r.from_office))) ===
             String(currentOfficeId),
-          )
-        : t;
-
-      const filteredA = currentUserId
-        ? a.filter((r) =>
+          );
+        }
+        if (currentUserId) {
+          filteredA = a.filter((r) =>
             String((r.from_user_id ?? (typeof r.from_user === "object" ? r.from_user?.id : r.from_user))) ===
             String(currentUserId),
-          )
-        : a;
+          );
+        }
+      }
 
       setTransfers(filteredT);
       setAssignments(filteredA);

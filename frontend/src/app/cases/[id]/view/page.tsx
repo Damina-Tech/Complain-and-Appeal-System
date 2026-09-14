@@ -145,13 +145,16 @@ export default function CaseViewPage() {
   const [latestAssignment, setLatestAssignment] = useState<{
     to_user_id?: number | string;
     to_user_name?: string;
+    from_user_id?: number | string;
     due_date?: string;
     timestamp?: string;
+    reason?: string;
   } | null>(null);
   const [latestTransfer, setLatestTransfer] = useState<{
     to_office_id?: number | string;
     to_office_name?: string;
     timestamp?: string;
+    reason?: string;
   } | null>(null);
   const [loadingAssignment, setLoadingAssignment] = useState(false);
   const [loadingTransfer, setLoadingTransfer] = useState(false);
@@ -237,10 +240,10 @@ export default function CaseViewPage() {
     (role) => role !== "Citizen"
   ) || (roleFromStorage && roleFromStorage !== "Citizen");
   
-  // Check if user is Director, Mayor Office, or Admin (for viewing tracking info)
+  // Check if user is Director, Mayor Office, Admin, or Focal Person (for viewing tracking info)
   const canViewTrackingInfo = currentUserGroups.some(
-    (role) => ["Director", "Mayor Office", "Admin"].includes(role)
-  ) || roleFromStorage === "Director" || roleFromStorage === "Mayor Office" || roleFromStorage === "Admin";
+    (role) => ["Director", "Mayor Office", "Admin", "Focal Person"].includes(role)
+  ) || roleFromStorage === "Director" || roleFromStorage === "Mayor Office" || roleFromStorage === "Admin" || roleFromStorage === "Focal Person";
   
   // Check if current user is Admin
   const isAdmin = currentUserGroups.includes("Admin") || roleFromStorage === "Admin";
@@ -285,17 +288,25 @@ export default function CaseViewPage() {
     (isAdmin || !latestAssignment || isAssignedToCurrentUser);
   
   // Get valid next statuses based on current status
+  // Returns statuses in UI format (e.g., "In Investigation")
   const getValidNextStatuses = (currentStatus: string): string[] => {
+    if (!currentStatus) return [];
+    
+    // Normalize the input status to match the keys
+    const normalizedStatus = currentStatus.toLowerCase().trim().replace(/\s+/g, "_").replace(/-/g, "_");
+    
     const statusFlow: Record<string, string[]> = {
       draft: ["Submitted"],
       submitted: ["In Investigation"],
+      pending: ["In Investigation"], // Legacy support: treat pending as submitted
       "in_investigation": ["Resolved", "Rejected"],
+      "in-investigation": ["Resolved", "Rejected"], // Handle hyphenated format
       resolved: ["Closed"],
       rejected: ["Closed", "On Appeal"],
       on_appeal: ["In Investigation", "Resolved", "Rejected"],
       closed: [], // No transitions from closed
     };
-    const normalizedStatus = currentStatus.toLowerCase().replace(/\s+/g, "_");
+    
     return statusFlow[normalizedStatus] || [];
   };
   
@@ -316,7 +327,13 @@ export default function CaseViewPage() {
       if (!res.ok) throw new Error(`Failed to load case: ${res.status}`);
       const c: ApiCase = await res.json();
       setCaseData(c);
-      setSelectedStatusUI(apiToUiStatus(c.status));
+      const uiStatus = apiToUiStatus(c.status);
+      setSelectedStatusUI(uiStatus);
+      // Debug: log status conversion
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[loadCase] API status:', c.status, '→ UI status:', uiStatus);
+        console.log('[loadCase] Valid next statuses:', getValidNextStatuses(c.status || ""));
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load data");
     } finally {
@@ -459,8 +476,10 @@ export default function CaseViewPage() {
           setLatestAssignment({
             to_user_id: toUserId,
             to_user_name: userName,
+            from_user_id: latest.from_user_id || latest.from_user || null,
             due_date: latest.due_date || latest.countdown_days,
             timestamp: latest.timestamp || latest.created_at,
+            reason: latest.reason || "",
           });
         } else {
           setLatestAssignment(null);
@@ -511,6 +530,7 @@ export default function CaseViewPage() {
             to_office_id: toOfficeId,
             to_office_name: officeName,
             timestamp: latest.timestamp || latest.created_at,
+            reason: latest.reason || "",
           });
         } else {
           setLatestTransfer(null);
@@ -625,23 +645,9 @@ export default function CaseViewPage() {
 
   const openChangeStatus = () => {
     const currentStatusUI = apiToUiStatus(caseData?.status);
-    // Convert validNextStatuses to UI format and auto-select the first one
-    const validNextStatusesUI = validNextStatuses.map(s => {
-      const normalized = s.toLowerCase().replace(/\s+/g, "_");
-      if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
-      return (
-        {
-          draft: "Draft",
-          submitted: "Submitted",
-          resolved: "Resolved",
-          rejected: "Rejected",
-          closed: "Closed",
-          on_appeal: "On Appeal",
-        }[normalized] || s
-      );
-    });
-    // Auto-select first valid next status, or keep current if no valid transitions
-    setSelectedStatusUI(validNextStatusesUI.length > 0 ? validNextStatusesUI[0] : currentStatusUI);
+    // Don't auto-select - keep current status selected initially
+    // User can then select the next valid status if they want to change
+    setSelectedStatusUI(currentStatusUI);
     setModalOpen("status");
   };
 
@@ -760,8 +766,29 @@ export default function CaseViewPage() {
         const msg = await res.text();
         throw new Error(msg || `Assign failed: ${res.status}`);
       }
+      
+      // If current status is 'Submitted', automatically change to 'In Investigation'
+      const currentStatus = caseData?.status?.toLowerCase();
+      if (currentStatus === "submitted" || currentStatus === "pending") {
+        try {
+          const statusRes = await fetch(`${API_URL}/cases/${id}/change_status/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers },
+            body: JSON.stringify({ status: "in_investigation" }),
+          });
+          if (!statusRes.ok) {
+            const statusMsg = await statusRes.text();
+            console.warn("Assignment succeeded but status change failed:", statusMsg);
+            // Don't throw - assignment was successful, status change is secondary
+          }
+        } catch (statusError: any) {
+          console.warn("Failed to auto-update status after assignment:", statusError);
+          // Don't throw - assignment was successful, status change is secondary
+        }
+      }
+      
       setModalOpen(null);
-      setSuccessMsg("Case assigned successfully.");
+      setSuccessMsg("Case assigned successfully" + (currentStatus === "submitted" || currentStatus === "pending" ? " and status updated to 'In Investigation'." : "."));
       setSuccessOpen(true);
       setTimeout(() => setSuccessOpen(false), 3000);
       await loadCase();
@@ -1287,7 +1314,7 @@ export default function CaseViewPage() {
             canManageCase && (
               <>
                 <div className="flex flex-wrap gap-3 pt-4">
-                  {canTransfer && !isClosed && (
+                  {canTransfer && (
                 <Button
                   variant="outline"
                       className="rounded-lg border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1298,7 +1325,7 @@ export default function CaseViewPage() {
                   Transfer
                 </Button>
                   )}
-                  {canAssign && !isClosed && (
+                  {canAssign && (
                 <Button
                       className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={openAssign}
@@ -1390,9 +1417,17 @@ export default function CaseViewPage() {
                             Assigned on: {new Date(latestAssignment.timestamp).toLocaleDateString()}
                           </div>
                         )}
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
-                          Note: Delete the assignment record from Activity page to enable reassignment.
-                        </div>
+                        {latestAssignment.reason && (
+                          <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800">
+                            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Assignment Reason:</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{latestAssignment.reason}</p>
+                          </div>
+                        )}
+                        {latestAssignment.from_user_id && String(latestAssignment.from_user_id) === String(currentUserId) && (
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                            Note: Delete the assignment record from Activity page to enable reassignment.
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -1409,6 +1444,12 @@ export default function CaseViewPage() {
                         {latestTransfer.timestamp && (
                           <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                             Transferred on: {new Date(latestTransfer.timestamp).toLocaleDateString()}
+                          </div>
+                        )}
+                        {latestTransfer.reason && (
+                          <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800">
+                            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Transfer Reason:</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{latestTransfer.reason}</p>
                           </div>
                         )}
                         <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
@@ -1584,36 +1625,56 @@ export default function CaseViewPage() {
             Current status: <span className="font-semibold">{titleCaseStatus}</span>
           </p>
           {(() => {
-            // Define all possible statuses in order
-            const allStatuses = ["Draft", "Submitted", "In Investigation", "Resolved", "Rejected", "Closed", "On Appeal"];
+            // Define all possible statuses in order (excluding Draft)
+            const allStatuses = ["Submitted", "In Investigation", "Resolved", "Rejected", "Closed", "On Appeal"];
             
-            // Convert validNextStatuses (API format) to UI format
-            const validNextStatusesUI = validNextStatuses.map(s => {
-              // Convert API status to UI status format
-              const normalized = s.toLowerCase().replace(/\s+/g, "_");
-              if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
-              return (
-                {
-                  draft: "Draft",
+            // getValidNextStatuses returns statuses in UI format (e.g., "In Investigation")
+            // Ensure they match exactly with allStatuses array
+            const validNextStatusesUI = validNextStatuses
+              .map(s => {
+                const trimmed = s.trim();
+                // Check if it's already in the correct UI format
+                const exactMatch = allStatuses.find(status => status === trimmed);
+                if (exactMatch) return exactMatch;
+                
+                // Normalize and map if needed
+                const normalized = trimmed.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+                const mapping: Record<string, string> = {
+                  draft: "Draft", // Will be filtered out below
                   submitted: "Submitted",
+                  in_investigation: "In Investigation",
                   resolved: "Resolved",
                   rejected: "Rejected",
                   closed: "Closed",
                   on_appeal: "On Appeal",
-                }[normalized] || s
-              );
-            });
+                };
+                return mapping[normalized] || trimmed;
+              })
+              .filter(Boolean) // Remove any undefined/null values
+              .filter(s => s !== "Draft"); // Remove Draft from valid next statuses
+            
+            // Debug logging
+            console.log('[Status Modal Debug]');
+            console.log('  Current API status:', caseData?.status);
+            console.log('  Current UI status:', titleCaseStatus);
+            console.log('  Valid next (raw from function):', validNextStatuses);
+            console.log('  Valid next (converted to UI):', validNextStatusesUI);
+            console.log('  All statuses:', allStatuses);
             
             return allStatuses.map((status) => {
               const isValid = validNextStatusesUI.includes(status);
               const isSelected = selectedStatusUI === status;
               const isCurrent = titleCaseStatus === status;
               
+              // Current status should always be checked, but next valid statuses should be enabled but not checked by default
+              const shouldBeChecked = isCurrent; // Only current status is checked by default
+              const shouldBeEnabled = isValid || isCurrent; // Current and valid next statuses are enabled
+              
               return (
                 <label
                   key={status}
                   className={`flex items-center gap-2 p-2 rounded transition-colors ${
-                    isValid
+                    shouldBeEnabled
                       ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                       : "cursor-not-allowed opacity-50"
                   } ${isCurrent ? "bg-blue-50 dark:bg-blue-900/20" : ""}`}
@@ -1624,12 +1685,12 @@ export default function CaseViewPage() {
                     value={status}
                     checked={isSelected}
                     onChange={() => {
-                      if (isValid) {
+                      if (shouldBeEnabled) {
                         setSelectedStatusUI(status);
                       }
                     }}
-                    disabled={!isValid}
-                    className={!isValid ? "cursor-not-allowed" : ""}
+                    disabled={!shouldBeEnabled}
+                    className={!shouldBeEnabled ? "cursor-not-allowed" : ""}
                   />
                   <span className={`flex-1 ${isCurrent ? "font-semibold" : ""}`}>
                     {status}
@@ -1654,22 +1715,25 @@ export default function CaseViewPage() {
             disabled={
               validNextStatuses.length === 0 || 
               selectedStatusUI === titleCaseStatus ||
+              selectedStatusUI === "Draft" || // Don't allow selecting Draft
               !(() => {
-                // Convert validNextStatuses to UI format for comparison
-                const validNextStatusesUI = validNextStatuses.map(s => {
-                  const normalized = s.toLowerCase().replace(/\s+/g, "_");
-                  if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
-                  return (
-                    {
-                      draft: "Draft",
-                      submitted: "Submitted",
-                      resolved: "Resolved",
-                      rejected: "Rejected",
-                      closed: "Closed",
-                      on_appeal: "On Appeal",
-                    }[normalized] || s
-                  );
-                });
+                // Convert validNextStatuses to UI format for comparison (excluding Draft)
+                const validNextStatusesUI = validNextStatuses
+                  .map(s => {
+                    const normalized = s.toLowerCase().replace(/\s+/g, "_");
+                    if (normalized === "in_investigation" || normalized === "in-investigation") return "In Investigation";
+                    return (
+                      {
+                        draft: "Draft", // Will be filtered out
+                        submitted: "Submitted",
+                        resolved: "Resolved",
+                        rejected: "Rejected",
+                        closed: "Closed",
+                        on_appeal: "On Appeal",
+                      }[normalized] || s
+                    );
+                  })
+                  .filter(s => s !== "Draft"); // Remove Draft
                 return validNextStatusesUI.includes(selectedStatusUI);
               })()
             }

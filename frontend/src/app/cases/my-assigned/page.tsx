@@ -20,6 +20,7 @@ type ApiUser = {
   first_name?: string | null;
   last_name?: string | null;
   username?: string | null;
+  office_id?: number | string | null;
 };
 
 type ApiOffice = {
@@ -34,17 +35,20 @@ type ApiCase = {
   status?: string | null;
   priority?: string | null;
   channel?: string | null;
+  office_id?: number | string | null;
   created_at?: string | null;
 };
 
 type AssignmentRecord = {
   id: number | string;
-  case: number | string | ApiCase;
-  case_id?: number | string;
+  case?: number | string | ApiCase;  // Optional - may not be included in serializer
+  case_id: number | string;  // Primary field from AssignmentSerializer
   from_user?: number | string | ApiUser | null;
   from_user_id?: number | string | null;
   to_user?: number | string | ApiUser | null;
   to_user_id?: number | string | null;
+  office_id?: number | string | null;  // Office ID from assignment
+  office?: number | string | ApiOffice | null;  // Nested office object (if included)
   reason?: string | null;
   created_at?: string | null;
   timestamp?: string | null;
@@ -56,8 +60,20 @@ type AssignmentRecord = {
 
 /* ===================== Helpers ===================== */
 
-const caseIdOf = (r: AssignmentRecord) =>
-  r.case_id ?? (typeof r.case === "object" ? r.case?.id : r.case);
+const caseIdOf = (r: AssignmentRecord): string | number | null => {
+  // AssignmentSerializer returns case_id as the primary field
+  if (r.case_id !== undefined && r.case_id !== null) {
+    return r.case_id;
+  }
+  // Fallback to case field if case_id is not available
+  if (r.case !== undefined && r.case !== null) {
+    if (typeof r.case === "object" && r.case !== null && "id" in r.case) {
+      return r.case.id;
+    }
+    return r.case;
+  }
+  return null;
+};
 
 const fetchAllPaginated = async <T,>(
   url: string,
@@ -138,9 +154,12 @@ export default function MyAssignedCasesPage() {
   // Enrichment caches
   const [titleMap, setTitleMap] = useState<Record<string, string>>({});
   const [fromUserNameMap, setFromUserNameMap] = useState<Record<string, string>>({});
+  
+  // Map from_user_id -> office_id (to get the assigner's office)
+  const [fromUserOfficeMap, setFromUserOfficeMap] = useState<Record<string, string>>({});
 
-  // Office resolver based on representative: repUserId -> officeName
-  const [officeByRepUserId, setOfficeByRepUserId] = useState<Record<string, string>>({});
+  // Office resolver: officeId -> officeName
+  const [officeMap, setOfficeMap] = useState<Record<string, string>>({});
 
   // Search
   const [search, setSearch] = useState("");
@@ -166,52 +185,60 @@ export default function MyAssignedCasesPage() {
       const offices = await fetchAllPaginated<ApiOffice>(`${API_URL}/offices/`, headers);
       const map: Record<string, string> = {};
       offices.forEach((o) => {
-        const rep = o.office_representative;
-        if (rep !== null && rep !== undefined && o.name) {
-          map[String(rep)] = o.name;
+        if (o.id && o.name) {
+          map[String(o.id)] = o.name;
         }
       });
-      setOfficeByRepUserId(map);
+      setOfficeMap(map);
     } catch {
       // ignore; map stays empty
     }
   };
 
   const loadAssigned = async () => {
-    if (!API_URL || !token) return;
+    if (!API_URL || !token || !currentUserId) {
+      setError("Missing API URL, token, or user ID");
+      return;
+    }
     try {
       setLoading(true);
       setError("");
 
-      const url = currentUserId
-        ? `${API_URL}/assignments/?to_user_id=${encodeURIComponent(currentUserId)}`
-        : `${API_URL}/assignments/`;
+      // Fetch assignments assigned to the current user
+      // The backend will handle filtering based on user role (Focal Person sees office + their assignments)
+      // We explicitly filter by to_user_id to ensure we only get assignments TO this user
+      const url = `${API_URL}/assignments/?to_user_id=${encodeURIComponent(currentUserId)}`;
 
       const data = await fetchAllPaginated<AssignmentRecord>(url, headers);
 
-      const filtered = currentUserId
-        ? data.filter((r) =>
-            String(r.to_user_id ?? (typeof r.to_user === "object" ? r.to_user?.id : r.to_user)) ===
-            String(currentUserId),
-          )
-        : data;
+      // Additional client-side filtering to ensure we only show assignments TO the current user
+      // This handles cases where the API might return assignments from the same office
+      const filtered = data.filter((r) => {
+        const toUserId = r.to_user_id ?? (typeof r.to_user === "object" ? r.to_user?.id : r.to_user);
+        return String(toUserId) === String(currentUserId);
+      });
 
       setAssignments(filtered);
       await enrichDetails(filtered);
     } catch (e: any) {
       setError(e?.message || "Failed to load data");
+      console.error("Error loading assignments:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  // Enrich: case titles + from-user names (for search display)
+  // Enrich: case titles + from-user names + office names (for search display)
   const enrichDetails = async (rows: AssignmentRecord[]) => {
     if (!API_URL || !token) return;
 
     const missingCaseIds = new Set<string>();
     const missingFromUserIds = new Set<string>();
+    const missingOfficeIds = new Set<string>();
 
+    // Collect office IDs from nested from_user objects first
+    const newFromUserOfficeMap: Record<string, string> = {};
+    
     rows.forEach((r) => {
       const cid = caseIdOf(r);
       const cidStr = cid ? String(cid) : "";
@@ -222,39 +249,132 @@ export default function MyAssignedCasesPage() {
 
       const rawFrom = r.from_user_id ?? (typeof r.from_user === "object" ? r.from_user?.id : r.from_user);
       const fromIdStr = rawFrom ? String(rawFrom) : "";
+      
+      if (!fromIdStr) {
+        // Skip if no from_user_id
+        return;
+      }
+      
+      // Check if we already have from_user info from nested object
       const hasFromName =
         typeof r.from_user === "object" &&
         (r.from_user?.first_name || r.from_user?.last_name || r.from_user?.email || r.from_user?.username);
-      if (fromIdStr && !hasFromName && !fromUserNameMap[fromIdStr]) {
+      
+      // If we have nested from_user with office_id, collect it
+      if (typeof r.from_user === "object" && r.from_user !== null && "office_id" in r.from_user) {
+        const nestedOfficeId = (r.from_user as ApiUser).office_id;
+        if (nestedOfficeId && !fromUserOfficeMap[fromIdStr] && !newFromUserOfficeMap[fromIdStr]) {
+          newFromUserOfficeMap[fromIdStr] = String(nestedOfficeId);
+          // Ensure office is in office map
+          if (!officeMap[String(nestedOfficeId)]) {
+            missingOfficeIds.add(String(nestedOfficeId));
+          }
+        }
+      }
+      
+      // Always fetch user if we don't have their office_id yet (even if we have their name)
+      const hasOfficeIdInMap = fromUserOfficeMap[fromIdStr] || newFromUserOfficeMap[fromIdStr];
+      const hasOfficeIdInNested = typeof r.from_user === "object" && r.from_user !== null && "office_id" in r.from_user && (r.from_user as ApiUser).office_id;
+      const hasOfficeId = hasOfficeIdInMap || hasOfficeIdInNested;
+      
+      // Always fetch if we don't have office_id OR if we don't have the user name
+      if (!hasOfficeId || !hasFromName) {
         missingFromUserIds.add(fromIdStr);
       }
     });
+    
+    // Update fromUserOfficeMap with collected values
+    if (Object.keys(newFromUserOfficeMap).length > 0) {
+      setFromUserOfficeMap((m) => ({ ...m, ...newFromUserOfficeMap }));
+    }
 
     const fetchCaseTitles = Array.from(missingCaseIds).map(async (cid) => {
-      const res = await fetch(`${API_URL}/cases/${cid}/`, { headers, cache: "no-store" });
-      if (!res.ok) return;
-      const c: ApiCase = await res.json();
-      if (c?.id != null) {
-        setTitleMap((m) => ({ ...m, [String(c.id)]: c.title || `Case #${c.id}` }));
+      try {
+        const res = await fetch(`${API_URL}/cases/${cid}/`, { headers, cache: "no-store" });
+        if (!res.ok) {
+          // If case not found (404) or forbidden (403), log but don't throw
+          console.warn(`Case ${cid} not accessible: ${res.status}`);
+          // Set a fallback title indicating the case is not accessible
+          setTitleMap((m) => ({ ...m, [String(cid)]: `Case #${cid} (Not accessible)` }));
+          return;
+        }
+        const c: ApiCase = await res.json();
+        if (c?.id != null) {
+          setTitleMap((m) => ({ ...m, [String(c.id)]: c.title || `Case #${c.id}` }));
+        }
+      } catch (err) {
+        console.error(`Error fetching case ${cid}:`, err);
+        // Set fallback title
+        setTitleMap((m) => ({ ...m, [String(cid)]: `Case #${cid} (Error loading)` }));
       }
     });
 
     const fetchUsers = Array.from(missingFromUserIds).map(async (uid) => {
-      const res = await fetch(`${API_URL}/users/${uid}/`, { headers, cache: "no-store" });
-      if (!res.ok) return;
-      const u: ApiUser = await res.json();
-      if (u?.id != null) {
-        const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
-        const label = full || u.email || u.username || String(u.id);
-        setFromUserNameMap((m) => ({ ...m, [String(u.id)]: label }));
+      try {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[enrichDetails] Fetching user ${uid}...`);
+        }
+        const res = await fetch(`${API_URL}/users/${uid}/`, { headers, cache: "no-store" });
+        if (!res.ok) {
+          console.warn(`[enrichDetails] Failed to fetch user ${uid}: ${res.status}`);
+          return;
+        }
+        const u: ApiUser = await res.json();
+        if (u?.id != null) {
+          const full = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+          const label = full || u.email || u.username || String(u.id);
+          setFromUserNameMap((m) => ({ ...m, [String(u.id)]: label }));
+          
+          // Store the user's office_id for office lookup (always, even if null)
+          setFromUserOfficeMap((m) => {
+            const newMap = { ...m };
+            if (u.office_id) {
+              newMap[String(u.id)] = String(u.office_id);
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`[enrichDetails] Stored office_id ${u.office_id} for user ${u.id}`);
+              }
+              // Also ensure the office is in our office map
+              if (!officeMap[String(u.office_id)]) {
+                missingOfficeIds.add(String(u.office_id));
+              }
+            } else {
+              // Log if user has no office_id
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[enrichDetails] User ${u.id} (${label}) has no office_id`);
+              }
+            }
+            return newMap;
+          });
+        }
+      } catch (err) {
+        console.error(`[enrichDetails] Error fetching user ${uid}:`, err);
       }
     });
 
-    await Promise.all([...fetchCaseTitles, ...fetchUsers]);
+    const fetchOffices = Array.from(missingOfficeIds).map(async (oid) => {
+      try {
+        const res = await fetch(`${API_URL}/offices/${oid}/`, { headers, cache: "no-store" });
+        if (!res.ok) return;
+        const o: ApiOffice = await res.json();
+        if (o?.id != null && o?.name) {
+          setOfficeMap((m) => ({ ...m, [String(o.id)]: o.name }));
+        }
+      } catch (err) {
+        console.error(`Error fetching office ${oid}:`, err);
+      }
+    });
+
+    await Promise.all([...fetchCaseTitles, ...fetchUsers, ...fetchOffices]);
+    
+    // Debug: log what was fetched
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[enrichDetails] Fetched: ${missingCaseIds.size} cases, ${missingFromUserIds.size} users, ${missingOfficeIds.size} offices`);
+      console.log(`[enrichDetails] fromUserOfficeMap now has ${Object.keys(fromUserOfficeMap).length} entries`);
+    }
   };
 
   useEffect(() => {
-    // build office rep index first (so "From (Office)" resolves reliably)
+    // build office index first (so "From Office" resolves reliably)
     loadOfficesIndex();
     loadAssigned();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -266,11 +386,50 @@ export default function MyAssignedCasesPage() {
     return cid ? (titleMap[String(cid)] || `Case #${cid}`) : "—";
   };
 
-  // From office via "office_representative == from_user_id"
+  // From office via from_user_id's office_id (the assigner's office)
   const fromOfficeNameOfRow = (r: AssignmentRecord) => {
-    const uid = r.from_user_id ?? (typeof r.from_user === "object" ? r.from_user?.id : r.from_user);
-    if (!uid) return "—";
-    return officeByRepUserId[String(uid)] || "—";
+    // Get the from_user_id
+    const fromUserId = r.from_user_id ?? (typeof r.from_user === "object" ? r.from_user?.id : r.from_user);
+    if (!fromUserId) return "—";
+    
+    // First try to get office_id from nested from_user object
+    let officeId: string | number | null = null;
+    if (typeof r.from_user === "object" && r.from_user !== null && "office_id" in r.from_user) {
+      officeId = (r.from_user as ApiUser).office_id ?? null;
+    }
+    
+    // If not in nested object, try the fromUserOfficeMap
+    if (!officeId) {
+      const mappedOfficeId = fromUserOfficeMap[String(fromUserId)];
+      if (mappedOfficeId) {
+        officeId = mappedOfficeId;
+      }
+    }
+    
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development' && !officeId) {
+      console.log(`[fromOfficeNameOfRow] No office_id found for from_user_id ${fromUserId}`, {
+        from_user: r.from_user,
+        from_user_id: r.from_user_id,
+        fromUserOfficeMap: fromUserOfficeMap[String(fromUserId)],
+        officeMapKeys: Object.keys(officeMap).slice(0, 5),
+      });
+    }
+    
+    // Look up the office name
+    if (officeId) {
+      const officeName = officeMap[String(officeId)];
+      if (officeName) return officeName;
+      
+      // Debug logging if office name not found
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[fromOfficeNameOfRow] Office ID ${officeId} not found in officeMap`, {
+          officeMapSize: Object.keys(officeMap).length,
+        });
+      }
+    }
+    
+    return "—";
   };
 
   const deadlineInfoOfRow = (r: AssignmentRecord) => {
@@ -293,7 +452,7 @@ export default function MyAssignedCasesPage() {
       return title.includes(term) || reason.includes(term) || fromOffice.includes(term);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignments, search, titleMap, officeByRepUserId, now]); // include "now" so countdown rerenders rows smoothly
+  }, [assignments, search, titleMap, officeMap, fromUserOfficeMap, now]); // include "now" so countdown rerenders rows smoothly
 
   // Pagination calculations
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
@@ -371,6 +530,12 @@ export default function MyAssignedCasesPage() {
             {!loading && !error && paginatedData.map((r) => {
               const cid = caseIdOf(r);
               const deadline = deadlineInfoOfRow(r);
+              
+              // Debug logging (only in development)
+              if (process.env.NODE_ENV === 'development' && !cid) {
+                console.warn('Assignment record missing case ID:', r);
+              }
+              
               return (
                 <TableRow
                   key={String(r.id)}
@@ -382,7 +547,7 @@ export default function MyAssignedCasesPage() {
                     </div>
                   </TableCell>
 
-                  <TableCell>Director Office</TableCell>
+                  <TableCell>{fromOfficeNameOfRow(r)}</TableCell>
 
                   <TableCell className="truncate max-w-[320px]">
                     {r.reason || "—"}
@@ -392,7 +557,17 @@ export default function MyAssignedCasesPage() {
 
                   <TableCell>
                     {cid ? (
-                      <Link href={`/cases/${cid}/view`}>
+                      <Link 
+                        href={`/cases/${cid}/view`}
+                        onClick={(e) => {
+                          // Validate case ID before navigation
+                          if (!cid || cid === "null" || cid === "undefined") {
+                            e.preventDefault();
+                            setError(`Invalid case ID: ${cid}`);
+                            return false;
+                          }
+                        }}
+                      >
                         <Button size="icon" variant="ghost" title={t("common", "view")}>
                           <Eye className="h-4 w-4 text-blue-500" />
                         </Button>

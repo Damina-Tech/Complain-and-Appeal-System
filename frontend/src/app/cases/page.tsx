@@ -51,6 +51,8 @@ type ApiCase = {
   created_at?: string;
   status?: string;
   citizen_id?: string | number;
+  reported_by?: string | number | null;
+  office_id?: string | number | null;
 };
 
 type Row = {
@@ -148,9 +150,13 @@ export default function ComplaintAppealPage() {
   const isAdmin = currentUserGroups.includes("Admin");
   const isDirector = currentUserGroups.includes("Director");
   const isMayorOffice = currentUserGroups.includes("Mayor Office");
+  const isFocalPerson = currentUserGroups.some((g) => g.includes("Focal Person"));
   
   // Check if user can manage categories (Admin, Director, Mayor Office only)
   const canManageCategories = isAdmin || isDirector || isMayorOffice;
+  
+  // Check if user can add users (Admin, Director, Mayor Office, Focal Person)
+  const canAddUsers = isAdmin || isDirector || isMayorOffice || isFocalPerson;
 
   // Hierarchy levels for role filtering
   const hierarchyLevels: Record<string, number> = {
@@ -305,10 +311,28 @@ export default function ComplaintAppealPage() {
       const headers = { Authorization: `Bearer ${token}` };
       const allCases = await fetchAllCases(API_URL, headers);
 
-      // Role-based filtering: citizens only see own cases; staff see all
-      const visibleCases = isCitizen
-        ? allCases.filter((c) => String(c.citizen_id) === String(userId))
-        : allCases;
+      // Get current user's office_id from localStorage
+      const currentUserOfficeId = typeof window !== "undefined" ? localStorage.getItem("office_id") : null;
+
+      // Role-based filtering:
+      // - Citizens: see their own cases (citizen_id) and cases reported by them (reported_by)
+      // - Focal Person: see only cases associated with their office
+      // - Other staff: see all cases
+      let visibleCases: ApiCase[];
+      if (isCitizen) {
+        visibleCases = allCases.filter((c) => 
+          String(c.citizen_id) === String(userId) || 
+          (c.reported_by && String(c.reported_by) === String(userId))
+        );
+      } else if (isFocalPerson && currentUserOfficeId) {
+        // Focal Person: filter by office_id
+        visibleCases = allCases.filter((c) => 
+          c.office_id && String(c.office_id) === String(currentUserOfficeId)
+        );
+      } else {
+        // Other staff (Admin, Director, Mayor Office): see all cases
+        visibleCases = allCases;
+      }
 
       setRows(visibleCases.map(mapRow));
     } catch (e: any) {
@@ -412,6 +436,55 @@ export default function ComplaintAppealPage() {
       setLoadingRoles(false);
     }
   };
+
+  // Load draft from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const draftData = localStorage.getItem("case_draft");
+        if (draftData) {
+          const parsed = JSON.parse(draftData);
+          // Only restore draft if form is empty (user hasn't started a new case)
+          if (!form.title && !form.description && !form.category) {
+            setForm((prev) => ({
+              ...prev,
+              title: parsed.title || "",
+              description: parsed.description || "",
+              category: parsed.category || "",
+              status: "draft",
+            }));
+          }
+        }
+      } catch (e) {
+        // Ignore localStorage errors
+        console.error("Failed to load draft:", e);
+      }
+    }
+  }, []); // Only run on mount
+
+  // Save draft to localStorage when form fields change
+  useEffect(() => {
+    if (typeof window !== "undefined" && openDialog) {
+      // Only save draft if form has some content
+      if (form.title || form.description || form.category) {
+        try {
+          const draftData = {
+            title: form.title,
+            description: form.description,
+            category: form.category,
+            status: "draft",
+          };
+          localStorage.setItem("case_draft", JSON.stringify(draftData));
+        } catch (e) {
+          // Ignore localStorage errors
+          console.error("Failed to save draft:", e);
+        }
+      } else {
+        // Clear draft if form is empty
+        localStorage.removeItem("case_draft");
+      }
+    }
+  }, [form.title, form.description, form.category, openDialog]);
 
   useEffect(() => {
     loadCases();
@@ -698,19 +771,8 @@ export default function ComplaintAppealPage() {
         onClose={() => {
           setOpenDialog(false);
           setFormErrors({});
-          setForm({
-            title: "",
-            description: "",
-            category: "",
-            attachments: [],
-            status: "draft",
-            office: "",
-            citizenId:
-              typeof window !== "undefined"
-                ? localStorage.getItem("user_id")
-                : null,
-            reported_by: null,
-          });
+          // Don't clear form on close - keep draft data for next time
+          // User can manually clear it if needed
         }}
         title={t("cases", "createCase")}
         maxWidthClassName="max-w-2xl"
@@ -762,8 +824,19 @@ export default function ComplaintAppealPage() {
               if (form.category) {
                 formData.append("category_id", String(form.category));
               }
-              formData.append("status", form.status || "draft");
-              if (form.office) formData.append("office_id", form.office);
+              // When saving, always set status to "submitted" (not "draft")
+              // Draft is only for temporary unsaved form data
+              formData.append("status", "submitted");
+              
+              // Get current user's office_id from localStorage (for Focal Person and other staff)
+              const currentUserOfficeId = typeof window !== "undefined" ? localStorage.getItem("office_id") : null;
+              if (currentUserOfficeId) {
+                formData.append("office_id", currentUserOfficeId);
+              } else if (form.office) {
+                // Fallback to form.office if available
+                formData.append("office_id", form.office);
+              }
+              
               if (form.citizenId) formData.append("citizen_id", form.citizenId);
               if (form.reported_by) formData.append("reported_by", form.reported_by);
               
@@ -858,12 +931,16 @@ export default function ComplaintAppealPage() {
               // Success
               await res.json().catch(() => null);
               setOpenDialog(false);
+              // Clear any draft data from localStorage on successful save
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("case_draft");
+              }
               setForm({
                 title: "",
                 description: "",
                 category: "",
                 attachments: [],
-                status: "draft",
+                status: "draft", // Keep as draft for UI state, but will be submitted on save
                 office: "",
                 citizenId:
                   typeof window !== "undefined"
@@ -997,15 +1074,17 @@ export default function ComplaintAppealPage() {
                     {loadingUsers ? (
                       <SelectItem value="loading" disabled>{t("common", "loading")}</SelectItem>
                     ) : (
-                      users.map((user) => (
-                        <SelectItem key={user.id} value={String(user.id)}>
-                          {user.name} {user.email ? `(${user.email})` : ""}
-                        </SelectItem>
-                      ))
+                      users
+                        .filter((user) => String(user.id) !== String(userId)) // Exclude current user
+                        .map((user) => (
+                          <SelectItem key={user.id} value={String(user.id)}>
+                            {user.name} {user.email ? `(${user.email})` : ""}
+                          </SelectItem>
+                        ))
                     )}
                   </SelectContent>
                 </Select>
-                {canManageCategories && (
+                {canAddUsers && (
                   <Button
                     type="button"
                     onClick={() => setUserModalOpen(true)}
@@ -1130,8 +1209,14 @@ export default function ComplaintAppealPage() {
 
               const assignedRole = userForm.group || availableRolesForCreation[0] || "Citizen";
               
+              // Generate a unique email if not provided (when toggle is off)
+              // Email is required by the User model, so we generate a system email
+              const generatedEmail = userForm.email?.trim() || 
+                `${userForm.first_name.toLowerCase().replace(/\s+/g, '_')}_${userForm.last_name.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}@system.local`;
+              
               const payload: Record<string, any> = {
-                username: userForm.email || `${userForm.first_name.toLowerCase()}_${Date.now()}`,
+                username: generatedEmail, // Use email as username
+                email: generatedEmail, // Email is required by the model
                 first_name: userForm.first_name.trim(),
                 last_name: userForm.last_name.trim(),
                 phone_number: userForm.phone_number.trim(),
@@ -1139,10 +1224,7 @@ export default function ComplaintAppealPage() {
                 groups: [assignedRole],
               };
 
-              // Add optional fields only if they have values
-              if (userForm.email?.trim()) {
-                payload.email = userForm.email.trim();
-              }
+              // Only set password if provided (when toggle is on)
               if (userForm.password?.trim()) {
                 payload.password = userForm.password.trim();
               }

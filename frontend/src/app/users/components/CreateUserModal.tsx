@@ -1,12 +1,38 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import { AnimatedModal } from "@/components/ui/animated-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
 import { NewUserForm } from "../types";
 import { getErrorMessage } from "../utils";
+
+type ApiOffice = { id: number | string; name: string };
+
+const fetchAllPaginated = async <T,>(
+  url: string,
+  headers: HeadersInit,
+): Promise<T[]> => {
+  let next: string | null = url;
+  const all: T[] = [];
+  while (next) {
+    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      all.push(...(data as T[]));
+      next = null;
+    } else if (Array.isArray((data as any)?.results)) {
+      all.push(...((data as any).results as T[]));
+      next = (data as any).next || null;
+    } else {
+      all.push(data as T);
+      next = null;
+    }
+  }
+  return all;
+};
 
 interface CreateUserModalProps {
   open: boolean;
@@ -37,6 +63,44 @@ export function CreateUserModal({
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  
+  // Offices for non-Citizen users
+  const [offices, setOffices] = useState<ApiOffice[]>([]);
+  const [loadingOffices, setLoadingOffices] = useState(false);
+  
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  
+  // Get current user's office_id from localStorage (for Focal Person creating Citizen)
+  const currentUserOfficeId = typeof window !== "undefined" ? localStorage.getItem("office_id") : null;
+  
+  // Load offices when modal opens
+  useEffect(() => {
+    if (open && API_URL && token) {
+      const loadOffices = async () => {
+        try {
+          setLoadingOffices(true);
+          const headers: HeadersInit = { Authorization: `Bearer ${token}` };
+          const list = await fetchAllPaginated<ApiOffice>(`${API_URL}/offices/`, headers);
+          setOffices(list.filter(Boolean));
+        } catch (e) {
+          console.error("Failed to load offices:", e);
+          setOffices([]);
+        } finally {
+          setLoadingOffices(false);
+        }
+      };
+      loadOffices();
+    }
+  }, [open, API_URL, token]);
+  
+  // When role changes to Citizen, clear office_id (will be auto-assigned by backend for Focal Person)
+  // When role changes to non-Citizen, don't auto-select office
+  useEffect(() => {
+    if (form.group === "Citizen") {
+      setForm((s) => ({ ...s, office_id: null }));
+    }
+  }, [form.group]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,6 +125,11 @@ export function CreateUserModal({
     // Validate role selection
     if (!form.group?.trim()) {
       errors.group = t("forms", "roleRequired");
+    }
+    
+    // Validate office selection for non-Citizen users
+    if (form.group && form.group !== "Citizen" && !form.office_id) {
+      errors.office_id = "Office is required for non-Citizen users.";
     }
 
     // Validate email and password if createLoginAccount is enabled
@@ -91,6 +160,7 @@ export function CreateUserModal({
         phone_number: "",
         national_id: "",
         group: defaultRole,
+        office_id: null,
       });
       setCreateLoginAccount(false);
       setFieldErrors({});
@@ -122,6 +192,7 @@ export function CreateUserModal({
       phone_number: "",
       national_id: "",
       group: defaultRole,
+      office_id: null,
     });
     onClose();
   };
@@ -272,6 +343,48 @@ export function CreateUserModal({
             )}
           </div>
         </div>
+
+        {/* Office selection - only for non-Citizen users */}
+        {form.group && form.group !== "Citizen" && (
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Office <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={`w-full rounded border border-gray-300 bg-white p-2 text-sm dark:border-dark-3 dark:bg-dark-2 dark:text-white ${
+                fieldErrors.office_id ? "border-red-500" : ""
+              }`}
+              value={form.office_id || ""}
+              onChange={(e) => {
+                setForm((s) => ({ ...s, office_id: e.target.value || null }));
+                if (fieldErrors.office_id) {
+                  setFieldErrors((prev) => {
+                    const newErrors = { ...prev };
+                    delete newErrors.office_id;
+                    return newErrors;
+                  });
+                }
+              }}
+              required
+              disabled={loadingOffices}
+            >
+              <option value="">{loadingOffices ? "Loading offices..." : "Select Office"}</option>
+              {offices.map((office) => (
+                <option key={office.id} value={String(office.id)}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+            {fieldErrors.office_id && (
+              <p className="mt-1 text-xs text-red-500">{fieldErrors.office_id}</p>
+            )}
+            {!loadingOffices && offices.length === 0 && (
+              <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                No offices available
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Create Login Account Toggle - moved to end */}
         <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-3 dark:bg-dark-2">

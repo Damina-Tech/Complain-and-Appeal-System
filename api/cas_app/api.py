@@ -74,7 +74,7 @@ class IsDirectorOrAdmin(permissions.BasePermission):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.select_related('office', 'added_by', 'status_changed_by').prefetch_related('groups').order_by("-id")
+    queryset = User.objects.select_related('office_id', 'added_by', 'status_changed_by').prefetch_related('groups').order_by("-id")
     serializer_class = UserSerializer
     # default; we'll override per-action in get_permissions()
     permission_classes = [permissions.IsAuthenticated]
@@ -92,7 +92,11 @@ class UserViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), CanEditUsers()]  # Same permission as edit for viewing
         if self.action in ["partial_update", "update"]:
             return [permissions.IsAuthenticated(), CanEditUsers()]
-        if self.action in ["list", "destroy"]:
+        if self.action in ["list"]:
+            # Allow Admin, Director, Mayor Office, and Focal Person to list users
+            # The actual filtering (by office for Focal Person) is done in get_queryset()
+            return [permissions.IsAuthenticated()]
+        if self.action in ["destroy"]:
             return [permissions.IsAuthenticated(), IsDirectorOrAdmin()]
         return super().get_permissions()
 
@@ -103,22 +107,24 @@ class UserViewSet(viewsets.ModelViewSet):
             user_hierarchy = get_user_role_hierarchy(self.request.user)
             is_director_or_above = user_hierarchy and user_hierarchy.hierarchy_level >= 3
             
-            # Check for Admin, Director, or Mayor Office group membership
+            # Check for Admin, Director, Mayor Office, or Focal Person group membership
             user_groups = [g.name for g in self.request.user.groups.all()]
             is_admin = "Admin" in user_groups
             is_director = "Director" in user_groups
             is_mayor_office = "Mayor Office" in user_groups
+            is_focal_person = any("Focal Person" in g for g in user_groups)
             has_full_rights = is_admin or is_director or is_mayor_office
             
             # Debug logging
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"UserViewSet.get_queryset - User: {self.request.user.username}, Groups: {user_groups}, is_admin: {is_admin}, has_full_rights: {has_full_rights}")
+            logger.info(f"UserViewSet.get_queryset - User: {self.request.user.username}, Groups: {user_groups}, is_admin: {is_admin}, is_focal_person: {is_focal_person}, has_full_rights: {has_full_rights}")
             
             # Check if user has view_user permission
             has_view_user = self.request.user.has_perm("cas_app.view_user")
             
-            if is_staff or is_director_or_above or has_view_user or has_full_rights:
+            # Allow Focal Person, Admin, Director, Mayor Office, or staff to view users
+            if is_staff or is_director_or_above or has_view_user or has_full_rights or is_focal_person:
                 # Get base queryset
                 base_qs = super().get_queryset()
                 total_before_filter = base_qs.count()
@@ -127,20 +133,20 @@ class UserViewSet(viewsets.ModelViewSet):
                 logger.info(f"UserViewSet.get_queryset - Total users before filter: {total_before_filter}, after excluding deleted: {total_after_filter}")
                 
                 # Focal Person: filter by office (only if they don't have full rights)
-                is_focal_person = any("Focal Person" in g for g in user_groups)
-                
                 if is_focal_person and not (is_staff or is_director_or_above or has_full_rights):
                     # Focal Person can only see users in their office
-                    if self.request.user.office:
-                        qs = qs.filter(office=self.request.user.office)
+                    if self.request.user.office_id:
+                        qs = qs.filter(office_id=self.request.user.office_id)
+                        logger.info(f"Focal Person filtering by office: {self.request.user.office_id.id}")
                     else:
                         # If focal person has no office, they can only see themselves
                         qs = qs.filter(pk=self.request.user.pk)
+                        logger.info("Focal Person has no office, showing only self")
                 
                 return qs
             # Non-staff/Director: queryset is limited to self to avoid leaking existence via list.
             logger.warning(f"UserViewSet.get_queryset - User {self.request.user.username} does not have permission to list users. Returning only self.")
-            return User.objects.select_related('office', 'added_by', 'status_changed_by').prefetch_related('groups').filter(pk=self.request.user.pk).exclude(status="deleted")
+            return User.objects.select_related('office_id', 'added_by', 'status_changed_by').prefetch_related('groups').filter(pk=self.request.user.pk).exclude(status="deleted")
         # Fallback for unauthenticated (shouldn't reach here due to permissions, but safety check)
         return User.objects.none()
 
@@ -148,7 +154,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Role-based create permissions:
         # - Admin: Can create users with any role
         # - Director and Mayor Office: Can only create Focal Person and Citizen
-        # - Focal Person: Cannot create users
+        # - Focal Person: Can only create Citizen users
         if self.request.user.is_authenticated:
             user_groups = [g.name for g in self.request.user.groups.all()]
             is_admin = "Admin" in user_groups
@@ -156,23 +162,32 @@ class UserViewSet(viewsets.ModelViewSet):
             is_mayor_office = "Mayor Office" in user_groups
             is_focal_person = any("Focal Person" in g for g in user_groups)
             
-            # Focal Person cannot create users
-            if is_focal_person and not (is_admin or is_director or is_mayor_office):
-                raise PermissionDenied("Focal Person role cannot create users.")
-            
-            # Check if user has permission to create
-            if not (is_admin or is_director or is_mayor_office or self.request.user.is_staff or self.request.user.is_superuser):
-                raise PermissionDenied("You do not have permission to create users.")
-            
-            # Validate role assignment based on hierarchy levels
-            # Rule: Users cannot create users with same or higher hierarchy level
+            # Get requested groups/roles
             requested_groups = serializer.validated_data.get("groups", [])
+            requested_role_names = []
             if requested_groups:
                 requested_role_names = [g.name if hasattr(g, 'name') else str(g) for g in requested_groups]
                 # Handle case where groups might be passed as strings
                 if isinstance(requested_groups[0], str):
                     requested_role_names = requested_groups
-                
+            
+            # Focal Person can only create Citizen users
+            if is_focal_person and not (is_admin or is_director or is_mayor_office):
+                if requested_role_names and "Citizen" not in requested_role_names:
+                    raise PermissionDenied("Focal Person can only create Citizen users.")
+                # If no groups specified, default to Citizen
+                if not requested_role_names:
+                    citizen_group, _ = Group.objects.get_or_create(name="Citizen")
+                    serializer.validated_data["groups"] = [citizen_group]
+                    requested_role_names = ["Citizen"]
+            
+            # Check if user has permission to create
+            if not (is_admin or is_director or is_mayor_office or is_focal_person or self.request.user.is_staff or self.request.user.is_superuser):
+                raise PermissionDenied("You do not have permission to create users.")
+            
+            # Validate role assignment based on hierarchy levels
+            # Rule: Users cannot create users with same or higher hierarchy level
+            if requested_role_names:
                 # Define hierarchy levels
                 hierarchy_levels = {
                     "Citizen": 1,
@@ -190,6 +205,8 @@ class UserViewSet(viewsets.ModelViewSet):
                     current_user_level = 4
                 elif is_director:
                     current_user_level = 3
+                elif is_focal_person:
+                    current_user_level = 2
                 
                 # Check each requested role - must be lower than current user's level
                 invalid_roles = []
@@ -205,6 +222,9 @@ class UserViewSet(viewsets.ModelViewSet):
                         f"Your level: {current_user_level}"
                     )
         
+        # Get office from request data if provided (for non-Citizen users)
+        office = serializer.validated_data.pop("office", None)
+        
         # For self-registration, request.user may be Anonymous; added_by stays None.
         user = serializer.save(added_by=self.request.user if self.request.user.is_authenticated else None)
 
@@ -218,14 +238,25 @@ class UserViewSet(viewsets.ModelViewSet):
         if not serializer.validated_data.get("groups"):
             citizen_group, _ = Group.objects.get_or_create(name="Citizen")
             user.groups.add(citizen_group)
+            requested_role_names = ["Citizen"]
         
-        # Set office for Focal Person created users
+        # Determine the role(s) of the created user
+        final_role_names = [g.name for g in user.groups.all()]
+        is_citizen = "Citizen" in final_role_names
+        
+        # Set office based on role and creator
         if self.request.user.is_authenticated:
             user_groups = [g.name for g in self.request.user.groups.all()]
             is_focal_person = any("Focal Person" in g for g in user_groups)
-            if is_focal_person and self.request.user.office:
-                user.office = self.request.user.office
-                user.save(update_fields=["office"])
+            
+            # If Focal Person creates Citizen, assign their office automatically
+            if is_focal_person and is_citizen and self.request.user.office_id:
+                user.office_id = self.request.user.office_id
+                user.save(update_fields=["office_id"])
+            # If office was provided (for non-Citizen users), assign it
+            elif office:
+                user.office_id = office
+                user.save(update_fields=["office_id"])
 
     def perform_update(self, serializer):
         # Check hierarchy-based permissions for edit
@@ -466,15 +497,52 @@ class CaseViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         user = self.request.user
 
-        # Citizens only see their own cases
+        # Citizens see their own cases (citizen_id) and cases reported by them (reported_by)
         if is_citizen(user):
-            return qs.filter(citizen_id=user)
+            return qs.filter(Q(citizen_id=user) | Q(reported_by=user))
         
-        # Staff/admins: Filter out Draft cases unless they are the creator
+        # Check if user is Focal Person
+        user_groups = [g.name for g in user.groups.all()]
+        is_focal_person = any("Focal Person" in g for g in user_groups)
+        
+        # Get cases assigned to this user (regardless of office)
+        assigned_case_ids = Assignment.objects.filter(
+            to_user_id=user
+        ).values_list('case_id', flat=True).distinct()
+        
+        # Focal Person: see cases associated with their office OR cases assigned to them
+        if is_focal_person and user.office_id:
+            # Filter by office_id and exclude draft cases (unless created by them)
+            office_cases = qs.filter(office_id=user.office_id)
+            # Exclude Draft cases unless they are the creator
+            office_cases = office_cases.exclude(status="draft")
+            # Include Draft cases created by the current user
+            office_cases = office_cases | Case.objects.filter(
+                deleted_by__isnull=True, 
+                status="draft", 
+                added_by=user,
+                office_id=user.office_id
+            ).select_related("citizen_id", "reported_by", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case").prefetch_related("status_history", "feedbacks")
+            
+            # Also include cases assigned to this user (even if from different office)
+            assigned_cases = qs.filter(id__in=assigned_case_ids).exclude(status="draft")
+            
+            # Combine both sets
+            qs = (office_cases | assigned_cases).distinct()
+            return qs
+        
+        # Staff/admins (non-Focal Person): Filter out Draft cases unless they are the creator
         # Draft cases are only visible to their creator
         qs = qs.exclude(status="draft")
         # Include Draft cases created by the current user
         qs = qs | Case.objects.filter(deleted_by__isnull=True, status="draft", added_by=user).select_related("citizen_id", "reported_by", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case").prefetch_related("status_history", "feedbacks")
+        # Also include cases assigned to this user (for consistency, though staff usually see all)
+        if assigned_case_ids:
+            assigned_cases = Case.objects.filter(
+                deleted_by__isnull=True,
+                id__in=assigned_case_ids
+            ).exclude(status="draft").select_related("citizen_id", "reported_by", "office_id", "added_by", "status_changed_by", "last_seen_by", "parent_case").prefetch_related("status_history", "feedbacks")
+            qs = (qs | assigned_cases).distinct()
 
         return qs.distinct()
 
@@ -539,16 +607,34 @@ class CaseViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
+        # Get office from request data if provided (serializer returns Office object, not ID)
+        office = serializer.validated_data.get("office_id")
+        
+        # If no office provided, use the logged-in user's office (if they have one)
+        if not office and self.request.user.is_authenticated:
+            if hasattr(self.request.user, 'office_id') and self.request.user.office_id:
+                office = self.request.user.office_id
+        
         # If the creator is a citizen, force the case owner to be themselves
         if is_citizen(self.request.user):
             # Citizens create cases as Draft by default
-            case = serializer.save(added_by=self.request.user, citizen_id=self.request.user, status="draft")
+            case = serializer.save(
+                added_by=self.request.user, 
+                citizen_id=self.request.user, 
+                status="draft",
+                office_id=office  # Set office_id if available
+            )
         else:
             # Staff/internal can create for any citizen; if citizen_id missing, default to current user
             citizen = serializer.validated_data.get("citizen_id") or self.request.user
             # If status is explicitly provided and not draft, use it; otherwise default to draft
             status_value = serializer.validated_data.get("status", "draft")
-            case = serializer.save(added_by=self.request.user, citizen_id=citizen, status=status_value)
+            case = serializer.save(
+                added_by=self.request.user, 
+                citizen_id=citizen, 
+                status=status_value,
+                office_id=office  # Set office_id if available
+            )
 
         CaseStatusHistory.objects.create(
             case=case,
@@ -886,35 +972,59 @@ class OfficeViewSet(viewsets.ModelViewSet):
                 )
         
         # auto-attach who created the office
-        serializer.save(added_by=self.request.user, updated_by=self.request.user)
+        office = serializer.save(added_by=self.request.user, updated_by=self.request.user)
+        
+        # If a representative is assigned, update their office_id field
+        if office_representative:
+            office_representative.office_id = office
+            office_representative.save(update_fields=["office_id"])
 
     def perform_update(self, serializer):
         # Validate that the representative is not already representing another office
-        office_representative = serializer.validated_data.get("office_representative")
-        current_office = serializer.instance  # The office being updated
         
-        if office_representative:
+        current_office = serializer.instance  # The office being updated
+        old_representative = current_office.office_representative  # Store old representative before update
+        new_representative = serializer.validated_data.get("office_representative")
+        
+        if new_representative:
             # Check if this user is already a representative for another office (excluding current office)
             existing_office = Office.objects.filter(
-                office_representative=office_representative,
+                office_representative=new_representative,
                 is_active=True
             ).exclude(id=current_office.id).first()
             
             if existing_office:
                 raise PermissionDenied(
-                    f"User '{office_representative.get_full_name() or office_representative.email or office_representative.username}' "
+                    f"User '{new_representative.get_full_name() or new_representative.email or new_representative.username}' "
                     f"is already the representative for office '{existing_office.name}'. "
                     f"A user cannot be a representative for more than one office."
                 )
         
         # update tracking
-        serializer.save(updated_by=self.request.user)
+        office = serializer.save(updated_by=self.request.user)
+        
+        # Update office_id field for representatives
+        # If representative changed, update both old and new representatives' office_id fields
+        if old_representative != new_representative:
+            # Clear office_id field for old representative (if they existed)
+            if old_representative:
+                old_representative.office_id = None
+                old_representative.save(update_fields=["office_id"])
+            
+            # Set office_id field for new representative (if assigned)
+            if new_representative:
+                new_representative.office_id = office
+                new_representative.save(update_fields=["office_id"])
 
     def destroy(self, request, *args, **kwargs):
         """
         Override destroy to check for related Transfer records before deletion.
+        Also clears the office field for the representative.
         """
         instance = self.get_object()
+        
+        # Store representative before deletion
+        representative = instance.office_representative
         
         # Check if there are any Transfer records referencing this office
         from cas_app.models import Transfer
@@ -952,6 +1062,11 @@ class OfficeViewSet(viewsets.ModelViewSet):
             if case_count > 0:
                 # This is just informational, not blocking, since Case uses SET_NULL
                 pass
+        
+        # Clear office_id field for representative before deletion
+        if representative:
+            representative.office_id = None
+            representative.save(update_fields=["office_id"])
         
         # Try to delete, catch any ProtectedError that might still occur
         try:
@@ -991,6 +1106,21 @@ class TransferViewSet(viewsets.ModelViewSet):
     queryset = Transfer.objects.select_related("case_id", "from_office_id", "to_office_id")
     serializer_class = TransferSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        
+        # Check if user is Focal Person
+        if user.is_authenticated:
+            user_groups = [g.name for g in user.groups.all()]
+            is_focal_person = any("Focal Person" in g for g in user_groups)
+            
+            # Focal Person: only see transfers where from_office_id matches their office
+            if is_focal_person and user.office_id:
+                qs = qs.filter(from_office_id=user.office_id)
+        
+        return qs
 
     def create(self, request, *args, **kwargs):
         # Validate hierarchy before creating transfer
@@ -1040,6 +1170,7 @@ class TransferViewSet(viewsets.ModelViewSet):
                 case_id=case,
                 from_user_id=self.request.user,
                 to_user_id=to_office.office_representative,
+                office_id=to_office,  # Set office_id to the target office
                 reason=f"Case transferred to {to_office.name}. {transfer.reason or ''}".strip(),
             )
             
@@ -1075,9 +1206,31 @@ class AssignmentViewSet(viewsets.ModelViewSet):
     - Director/Mayor Office: Can assign to any office or users in any office (except Citizen)
     - Focal Person: Can only assign to users within their own office (except Citizen)
     """
-    queryset = Assignment.objects.select_related("case_id", "from_user_id", "to_user_id")
+    queryset = Assignment.objects.select_related("case_id", "from_user_id", "to_user_id", "office_id")
     serializer_class = AssignmentSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        
+        # Check if user is Focal Person
+        if user.is_authenticated:
+            user_groups = [g.name for g in user.groups.all()]
+            is_focal_person = any("Focal Person" in g for g in user_groups)
+            
+            # Focal Person: see assignments where office_id matches their office
+            # OR where they are the assignee (to_user_id) - this ensures they see all cases assigned to them
+            if is_focal_person and user.office_id:
+                # Include assignments assigned to this user OR assignments in their office
+                qs = qs.filter(
+                    Q(office_id=user.office_id) | Q(to_user_id=user)
+                )
+            elif is_focal_person:
+                # If Focal Person has no office, only show assignments assigned to them
+                qs = qs.filter(to_user_id=user)
+        
+        return qs
 
     def create(self, request, *args, **kwargs):
         """Validate assignment permissions before creating."""
@@ -1115,7 +1268,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             pass
         elif is_focal_person:
             # Focal Person can only assign to users in their own office
-            if not request.user.office:
+            if not request.user.office_id:
                 return Response(
                     {"detail": "You must be assigned to an office to assign cases."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1137,11 +1290,24 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if not from_user:
             # Assume the current actor is handing over the case
             serializer.validated_data["from_user_id"] = self.request.user
+        
+        # Set office_id from the case's office_id or from_user's office_id
+        case = serializer.validated_data.get("case_id")
+        office_id = None
+        if case and case.office_id:
+            office_id = case.office_id
+        elif from_user and from_user.office_id:
+            office_id = from_user.office_id
+        elif self.request.user.office_id:
+            office_id = self.request.user.office_id
+        
+        if office_id:
+            serializer.validated_data["office_id"] = office_id
+        
         assignment = serializer.save()
         
         # Create notification for the assigned user
         to_user = assignment.to_user_id
-        case = assignment.case_id
         if to_user:
             Notification.objects.create(
                 user=to_user,
@@ -1194,8 +1360,8 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             pass  # No additional filtering
         elif is_focal_person:
             # Can only assign to users in their own office
-            if request.user.office:
-                qs = qs.filter(office=request.user.office)
+            if request.user.office_id:
+                qs = qs.filter(office_id=request.user.office_id)
             else:
                 # If focal person has no office, they can't assign to anyone
                 qs = User.objects.none()
@@ -1205,7 +1371,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         
         # Serialize and return
         from .serializers import UserSerializer
-        serializer = UserSerializer(qs.select_related("office"), many=True)
+        serializer = UserSerializer(qs.select_related("office_id"), many=True)
         return Response(serializer.data)
     
 
@@ -1412,9 +1578,9 @@ class ReportsViewSet(viewsets.ViewSet):
     def _filtered_cases(self, request):
         qs = Case.objects.filter(deleted_by__isnull=True).select_related("office_id", "citizen_id", "reported_by", "added_by")
 
-        # citizen scoping
+        # citizen scoping: citizens see their own cases (citizen_id) and cases reported by them (reported_by)
         if is_citizen(request.user):
-            qs = qs.filter(citizen_id=request.user)
+            qs = qs.filter(Q(citizen_id=request.user) | Q(reported_by=request.user))
 
         # optional filters
         start = request.query_params.get("start")
@@ -1452,11 +1618,15 @@ class ReportsViewSet(viewsets.ViewSet):
         total = qs.count()
         data = {
             "total_cases": total,
-            "pending": by_status.get("pending", 0),
-            "investigation": by_status.get("investigation", 0),
+            "draft": by_status.get("draft", 0),
+            "submitted": by_status.get("submitted", 0) + by_status.get("pending", 0),  # Include legacy pending
+            "in_investigation": by_status.get("in_investigation", 0),
             "resolved": by_status.get("resolved", 0),
             "rejected": by_status.get("rejected", 0),
             "closed": by_status.get("closed", 0),
+            "on_appeal": by_status.get("on_appeal", 0),
+            # Legacy: keep "pending" for backward compatibility (maps to submitted)
+            "pending": by_status.get("pending", 0),
             # A simple "open" definition (not closed or resolved or rejected)
             "open": total - (by_status.get("resolved", 0) + by_status.get("rejected", 0) + by_status.get("closed", 0)),
         }
@@ -1514,7 +1684,7 @@ class ReportsViewSet(viewsets.ViewSet):
         # Fetch user basics in one go with optimized query
         user_ids = [row["to_user_id"] for row in agg if row["to_user_id"]]
         user_map = {
-            u.id: u for u in User.objects.filter(id__in=user_ids).select_related('office').only('id', 'username', 'first_name', 'last_name')
+            u.id: u for u in User.objects.filter(id__in=user_ids).select_related('office_id').only('id', 'username', 'first_name', 'last_name')
         }
         out = []
         for row in agg:
@@ -1599,8 +1769,8 @@ class CaseFeedbackViewSet(viewsets.ReadOnlyModelViewSet):
         if is_citizen(user):
             qs = qs.filter(created_by=user)
         # Focal Person sees feedback for cases in their office
-        elif hasattr(user, 'office') and user.office:
-            qs = qs.filter(case__office_id=user.office)
+        elif hasattr(user, 'office_id') and user.office_id:
+            qs = qs.filter(case__office_id=user.office_id)
         # Admin and Director see all
 
         return qs

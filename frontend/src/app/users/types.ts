@@ -42,5 +42,6 @@ export type NewUserForm = {
   phone_number: string;
   national_id: string;
   group: string; // single-select for create
+  office_id?: string | number | null; // office ID for non-Citizen users
 };
 

@@ -66,8 +66,8 @@ export function useUserPermissions() {
   // Create permissions:
   // - Admin: Can create users with any role
   // - Director and Mayor Office: Can only create Focal Person and Citizen
-  // - Focal Person: Cannot create users
-  const canCreateUser = isAdmin || isDirector || isMayorOffice;
+  // - Focal Person: Can only create Citizen users
+  const canCreateUser = isAdmin || isDirector || isMayorOffice || isFocalPerson;
 
   // Permission checks: Admin, Director, and Mayor Office can edit/delete (with hierarchy restrictions)
   const canEditUser = isAdmin || isDirector || isMayorOffice;
@@ -179,8 +179,10 @@ export function useUserPermissions() {
       currentUserLevel = hierarchyLevels["Mayor Office"];
     } else if (isDirector) {
       currentUserLevel = hierarchyLevels["Director"];
+    } else if (isFocalPerson) {
+      currentUserLevel = hierarchyLevels["Focal Person"];
     } else {
-      // Focal Person or others cannot create users
+      // Others cannot create users
       return [];
     }
 
@@ -190,7 +192,7 @@ export function useUserPermissions() {
       // Only include roles that have a valid level AND are lower than current user's level
       return roleLevel !== undefined && roleLevel < currentUserLevel;
     });
-  }, [isAdmin, isDirector, isMayorOffice]);
+  }, [isAdmin, isDirector, isMayorOffice, isFocalPerson]);
 
   return {
     currentUserGroups,

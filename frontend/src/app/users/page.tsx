@@ -134,8 +134,14 @@ export default function UsersPage() {
     try {
       const assignedRole = form.group || availableRolesForCreation[0] || "Citizen";
       
+      // Generate a unique email if not provided (when toggle is off)
+      // Email is required by the User model, so we generate a system email
+      const generatedEmail = form.email?.trim() || 
+        `${form.first_name.toLowerCase().replace(/\s+/g, '_')}_${form.last_name.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}@ciroocity.com`;
+      
       const payload: Record<string, any> = {
-        username: form.email || `${form.first_name.toLowerCase()}_${Date.now()}`,
+        username: generatedEmail, // Use email as username
+        email: generatedEmail, // Email is required by the model
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         phone_number: form.phone_number.trim(),
@@ -143,14 +149,18 @@ export default function UsersPage() {
         groups: [assignedRole],
       };
 
-      if (form.email?.trim()) {
-        payload.email = form.email.trim();
-      }
+      // Only set password if provided (when toggle is on)
       if (form.password?.trim()) {
         payload.password = form.password.trim();
       }
       if (form.national_id?.trim()) {
         payload.national_id = form.national_id.trim();
+      }
+      
+      // Add office_id for non-Citizen users (if provided)
+      // For Citizen users created by Focal Person, office_id will be auto-assigned by backend
+      if (form.office_id && assignedRole !== "Citizen") {
+        payload.office_id = form.office_id;
       }
 
       const res = await fetch(`${API_URL}/users/`, {

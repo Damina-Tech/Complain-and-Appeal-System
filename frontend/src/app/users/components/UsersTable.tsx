@@ -59,8 +59,35 @@ export function UsersTable({
 
         {!loading && pageError && (
           <TableRow>
-            <TableCell colSpan={7} className="py-4 text-center text-red-500">
-              {pageError}
+            <TableCell colSpan={7} className="py-8">
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20">
+                <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                  <svg
+                    className="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="text-lg font-semibold">Error Loading Users</span>
+                </div>
+                <p className="max-w-md text-center text-sm text-red-700 dark:text-red-300">
+                  {pageError}
+                </p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                >
+                  Reload Page
+                </button>
+              </div>
             </TableCell>
           </TableRow>
         )}
