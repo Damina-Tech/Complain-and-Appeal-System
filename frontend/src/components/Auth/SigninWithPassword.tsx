@@ -11,8 +11,8 @@ import { Eye, EyeOff } from "lucide-react";
 
 export default function SigninWithPassword() {
   const [data, setData] = useState({
-    email: process.env.NEXT_PUBLIC_DEMO_USER_MAIL || "",
-    password: process.env.NEXT_PUBLIC_DEMO_USER_PASS || "",
+    email: "",
+    password: "",
     remember: false,
   });
 
@@ -35,7 +35,7 @@ export default function SigninWithPassword() {
     setError("");
 
     try {
-      const response = await loginUser(data.email, data.password); // call Django API
+      const response = await loginUser(data.email.trim(), data.password); // call Django API
       const token = response.access;
       
       // Save token to localStorage
@@ -92,17 +92,17 @@ export default function SigninWithPassword() {
       }
     } catch (err: any) {
       setLoading(false);
-      setError("Invalid email or password");
+      setError(err?.response ? "Invalid username, email, or password" : "Unable to reach the sign-in service. Please try again.");
     }
   };
 
   return (
     <form onSubmit={handleSubmit}>
       <InputGroup
-        type="email"
-        label="Email"
+        type="text"
+        label="Username or email"
         className="mb-4 [&_input]:py-[15px]"
-        placeholder="Enter your email"
+        placeholder="Enter your username or email"
         name="email"
         handleChange={handleChange}
         value={data.email}
