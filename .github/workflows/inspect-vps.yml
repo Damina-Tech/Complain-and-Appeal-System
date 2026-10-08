@@ -4,7 +4,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [inspect, expand-var]
+        options: [inspect, expand-var, finalize-login]
         default: inspect
 permissions:
   contents: read
@@ -30,6 +30,17 @@ jobs:
             vgs || true
             findmnt /var
             lvs --units b --nosuffix -o lv_path,lv_size
+            if [ "$OPERATION" = finalize-login ]; then
+              docker exec cas-cas-web-1 sh -c 'grep -rl "Username or email" .next/static/chunks >/dev/null'
+              curl -fsS https://cas.chirocity.gov.et/auth/sign-in >/dev/null
+              curl -fsS https://cas-api.chirocity.gov.et/api/health/
+              docker image prune -f
+              rm -f /tmp/cas-login-fix/cas-web.tar.gz
+              rmdir /tmp/cas-login-fix 2>/dev/null || true
+              df -h /var
+              echo 'Verified CAS username login frontend deployed.'
+              exit 0
+            fi
             if [ "$OPERATION" = expand-var ]; then
               test "$(findmnt -n -o SOURCE /var)" = /dev/mapper/vg0-lv--1
               test "$(findmnt -n -o FSTYPE /var)" = xfs

@@ -47,7 +47,8 @@ jobs:
             df -h /var
             docker load -i /tmp/cas-login-fix/cas-web.tar.gz
             CAS_DATA_DIR=/srv/cas docker compose --env-file .env -f docker-compose.yml -f docker-compose.domains.yml up -d --no-deps --wait --wait-timeout 180 cas-web
-            curl -fsS https://cas.chirocity.gov.et/auth/sign-in | grep -q 'Username or email'
+            docker exec cas-cas-web-1 sh -c 'grep -rl "Username or email" .next/static/chunks >/dev/null'
+            curl -fsS https://cas.chirocity.gov.et/auth/sign-in >/dev/null
             curl -fsS https://cas-api.chirocity.gov.et/api/health/
             docker image prune -f
             rm /tmp/cas-login-fix/cas-web.tar.gz
