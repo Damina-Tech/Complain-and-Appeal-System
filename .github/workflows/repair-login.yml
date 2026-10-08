@@ -1,0 +1,54 @@
+name: Deploy verified CAS login fix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cas-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cas-images
+          run-id: 37805342347
+          github-token: ${{ github.token }}
+      - name: Extract verified frontend image
+        run: |
+          docker load -i cas-images.tar.gz
+          docker save cas-web:local | gzip > cas-web.tar.gz
+      - uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 20m
+          source: cas-web.tar.gz
+          target: /tmp/cas-login-fix
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          command_timeout: 15m
+          script: |
+            set -eu
+            cd /var/www/Complain-and-Appeal-System
+            docker tag "$(docker inspect --format '{{.Image}}' cas-cas-api-1)" cas-api:local
+            docker tag "$(docker inspect --format '{{.Image}}' cas-cas-web-1)" cas-web:local
+            docker image prune -f
+            df -h /var
+            docker load -i /tmp/cas-login-fix/cas-web.tar.gz
+            CAS_DATA_DIR=/srv/cas docker compose --env-file .env -f docker-compose.yml -f docker-compose.domains.yml up -d --no-deps --wait --wait-timeout 180 cas-web
+            curl -fsS https://cas.chirocity.gov.et/auth/sign-in | grep -q 'Username or email'
+            curl -fsS https://cas-api.chirocity.gov.et/api/health/
+            docker image prune -f
+            rm /tmp/cas-login-fix/cas-web.tar.gz
+            rmdir /tmp/cas-login-fix
