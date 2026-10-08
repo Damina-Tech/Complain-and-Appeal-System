@@ -4,7 +4,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [inspect]
+        options: [inspect, expand-var]
         default: inspect
 permissions:
   contents: read
@@ -30,6 +30,16 @@ jobs:
             vgs || true
             findmnt /var
             lvs --units b --nosuffix -o lv_path,lv_size
+            if [ "$OPERATION" = expand-var ]; then
+              test "$(findmnt -n -o SOURCE /var)" = /dev/mapper/vg0-lv--1
+              test "$(findmnt -n -o FSTYPE /var)" = xfs
+              size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/vg0/lv-1 | tr -d ' ')
+              if awk "BEGIN {exit !($size < 10300000000)}"; then
+                lvextend --size +384M --resizefs /dev/vg0/lv-1
+              fi
+              df -h /var
+              exit 0
+            fi
             for path in /var/www/Complain-and-Appeal-System /var/www/Complain-and-Appeal-System/Complain-and-Appeal-System; do
               if [ -d "$path/.git" ]; then
                 echo "Complain-and-Appeal-System clone: $path"
