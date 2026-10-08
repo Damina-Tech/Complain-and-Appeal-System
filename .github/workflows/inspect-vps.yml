@@ -1,0 +1,51 @@
+name: Inspect Complain-and-Appeal-System VPS
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [inspect]
+        default: inspect
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          OPERATION: ${{ inputs.operation }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: OPERATION
+          script: |
+            set -eu
+            df -h /var/lib/docker
+            df -i /var/lib/docker
+            docker system df
+            df -h / /tmp /var
+            vgs || true
+            findmnt /var
+            lvs --units b --nosuffix -o lv_path,lv_size
+            for path in /var/www/Complain-and-Appeal-System /var/www/Complain-and-Appeal-System/Complain-and-Appeal-System; do
+              if [ -d "$path/.git" ]; then
+                echo "Complain-and-Appeal-System clone: $path"
+                git -C "$path" remote -v
+                git -C "$path" status --short
+                if [ -f "$path/.env" ]; then echo 'Root production .env exists'; fi
+              fi
+            done
+            docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'
+            docker inspect --format '{{.Name}} networks={{json .NetworkSettings.Networks}}' hrms-proxy-1
+            cd /var/www/Complain-and-Appeal-System
+            if [ -f api/db.sqlite3 ]; then
+              python3 - <<'PY'
+            import sqlite3
+            c=sqlite3.connect('file:api/db.sqlite3?mode=ro', uri=True)
+            print('Existing CAS database users:', c.execute('SELECT count(*) FROM cas_app_user').fetchone()[0])
+            print('Existing CAS database cases:', c.execute('SELECT count(*) FROM cas_app_case').fetchone()[0])
+            PY
+            fi
