@@ -1,0 +1,45 @@
+name: cas
+services:
+  cas-api:
+    image: cas-api:local
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_DEBUG: 'false'
+      ALLOWED_HOSTS: cas-api.chirocity.gov.et,localhost,127.0.0.1,cas-api
+      FRONTEND_BASE_URL: https://cas.chirocity.gov.et
+      CSRF_TRUSTED_ORIGINS: https://cas-api.chirocity.gov.et,https://cas.chirocity.gov.et
+      DATABASE_PATH: /data/db.sqlite3
+      MEDIA_ROOT: /media
+    volumes:
+      - ${CAS_DATA_DIR:-./.docker-data}/data:/data
+      - ${CAS_DATA_DIR:-./.docker-data}/media:/media
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      start_period: 20s
+      retries: 12
+  cas-web:
+    image: cas-web:local
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://cas-api.chirocity.gov.et/api
+    restart: unless-stopped
+    depends_on:
+      cas-api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/auth/sign-in').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+  cas-files:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    volumes:
+      - ${CAS_DATA_DIR:-./.docker-data}/media:/media:ro
+      - ./deploy/media.conf:/etc/nginx/conf.d/default.conf:ro

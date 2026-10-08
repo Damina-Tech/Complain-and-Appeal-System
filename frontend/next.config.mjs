@@ -1,11 +1,13 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  experimental: { cpus: 2 },
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
     remotePatterns: [
+      { protocol: "https", hostname: "cas-api.chirocity.gov.et" },
       {
         protocol: "https",
         hostname: "cdn.sanity.io",

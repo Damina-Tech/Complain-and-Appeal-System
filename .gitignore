@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.docker-data/
+node_modules/
+.next/
+__pycache__/
+*.pyc
+venv/
+.venv/
+api/media/
+api/staticfiles/

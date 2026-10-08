@@ -1,0 +1,11 @@
+services:
+  cas-api:
+    networks: [default, edge]
+  cas-web:
+    networks: [default, edge]
+  cas-files:
+    networks: [default, edge]
+networks:
+  edge:
+    external: true
+    name: chirocity_edge

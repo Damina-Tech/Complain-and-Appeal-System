@@ -1,0 +1,75 @@
+name: Deploy Complain-and-Appeal-System to VPS
+on:
+  push:
+    branches: [main]
+    paths: ['api/**', 'frontend/**', 'deploy/**', '*compose*.yml', '.env.example', '.github/workflows/deploy-vps.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cas-production
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify containers, migrations and health
+        env:
+          DEPLOY_DOMAINS: '0'
+        run: bash deploy/deploy.sh
+      - name: Package verified runtime images
+        run: docker save cas-api:local cas-web:local | gzip > cas-images.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cas-images
+          path: cas-images.tar.gz
+          retention-days: 1
+      - name: Clean up CI database
+        if: always()
+        run: docker compose down
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cas-images
+      - name: Upload verified images to VPS temporary storage
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          timeout: 120s
+          command_timeout: 20m
+          source: cas-images.tar.gz
+          target: /tmp/cas-release-${{ github.sha }}
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/Complain-and-Appeal-System' }}
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          envs: APP_DIR,DEPLOY_SHA
+          command_timeout: 40m
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            git diff --quiet
+            git diff --cached --quiet
+            git fetch origin main
+            git merge-base --is-ancestor "$DEPLOY_SHA" origin/main
+            git checkout --detach "$DEPLOY_SHA"
+            docker load --input "/tmp/cas-release-$DEPLOY_SHA/cas-images.tar.gz"
+            rm -f "/tmp/cas-release-$DEPLOY_SHA/cas-images.tar.gz"
+            rmdir "/tmp/cas-release-$DEPLOY_SHA"
+            SKIP_BUILD=1 bash deploy/deploy.sh

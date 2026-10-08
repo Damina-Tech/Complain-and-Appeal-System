@@ -41,11 +41,24 @@ jobs:
             docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'
             docker inspect --format '{{.Name}} networks={{json .NetworkSettings.Networks}}' hrms-proxy-1
             cd /var/www/Complain-and-Appeal-System
-            if [ -f api/db.sqlite3 ]; then
-              python3 - <<'PY'
-            import sqlite3
-            c=sqlite3.connect('file:api/db.sqlite3?mode=ro', uri=True)
-            print('Existing CAS database users:', c.execute('SELECT count(*) FROM cas_app_user').fetchone()[0])
-            print('Existing CAS database cases:', c.execute('SELECT count(*) FROM cas_app_case').fetchone()[0])
+            if docker inspect cas-cas-api-1 >/dev/null 2>&1; then
+              CAS_DATA_DIR=/srv/cas docker compose exec -T cas-api python manage.py shell <<'PY'
+            import uuid, secrets
+            from django.db import transaction
+            from django.contrib.auth import get_user_model
+            from django.test import Client
+            with transaction.atomic():
+                username = 'deployment-check-' + uuid.uuid4().hex
+                password = secrets.token_urlsafe(32)
+                get_user_model().objects.create_user(username=username, password=password, is_staff=True, is_superuser=True)
+                client = Client(HTTP_HOST='cas-api.chirocity.gov.et')
+                response = client.post('/api/login/', {'username': username, 'password': password}, content_type='application/json')
+                assert response.status_code == 200, 'Login failed: ' + str(response.status_code)
+                token = response.json()['access']
+                response = client.get('/api/auth/me/', HTTP_AUTHORIZATION='Bearer ' + token)
+                assert response.status_code == 200, 'Authenticated profile failed'
+                transaction.set_rollback(True)
+            print('Login and authenticated profile passed; temporary test account rolled back.')
+            print('Existing users:', get_user_model().objects.count())
             PY
             fi
