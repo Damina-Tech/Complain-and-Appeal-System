@@ -1,0 +1,33 @@
+name: Inspect CAS identity deployment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/Complain-and-Appeal-System' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            git status --short --untracked-files=no
+            find api/cas_app/migrations -maxdepth 1 -name '*.py' -printf '%f\n'
+            CAS_DATA_DIR=/srv/cas docker compose exec -T cas-api python manage.py shell <<'PY'
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT name FROM django_migrations WHERE app='cas_app'")
+                print('Applied CAS migrations:', cursor.fetchall())
+                tables = connection.introspection.table_names(cursor)
+                print('CAS tables:', [t for t in tables if t.startswith('cas_app_')])
+                for table in ['cas_app_user', 'cas_app_case']:
+                    print(table, [c.name for c in connection.introspection.get_table_description(cursor, table)])
+            PY
