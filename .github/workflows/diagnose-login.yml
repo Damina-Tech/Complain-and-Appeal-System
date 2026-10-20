@@ -1,0 +1,29 @@
+name: Diagnose CAS sign-in
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/Complain-and-Appeal-System' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            docker logs --since 30m --tail 2000 cas-cas-api-1 2>&1 | python3 -c 'import sys,re,collections; counts=collections.Counter(); [counts.update([(m.group(1),m.group(2).split("?")[0],m.group(3))]) for line in sys.stdin if (m:=re.search(r"\"(GET|POST|PATCH|PUT|DELETE) ([^ ]+) HTTP/[^ ]+\" (401|403)",line))]; print("Recent denied API requests:",dict(counts))'
+            CAS_DATA_DIR=/srv/cas docker compose exec -T cas-api python manage.py shell <<'PY'
+            from django.conf import settings
+            from django.contrib.auth.models import Group
+            print('CAS identity configuration:', settings.AUTH_MODE, settings.KEYCLOAK_URL, settings.KEYCLOAK_REALM, settings.KEYCLOAK_CLIENT_ID, settings.KEYCLOAK_AUDIENCE)
+            print('Citizen role exists:', Group.objects.filter(name='Citizen').exists())
+            PY
+            docker ps --filter name=keycloak --format '{{.Names}}'
