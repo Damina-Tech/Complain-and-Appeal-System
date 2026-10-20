@@ -25,5 +25,15 @@ jobs:
             from django.contrib.auth.models import Group
             print('CAS identity configuration:', settings.AUTH_MODE, settings.KEYCLOAK_URL, settings.KEYCLOAK_REALM, settings.KEYCLOAK_CLIENT_ID, settings.KEYCLOAK_AUDIENCE)
             print('Citizen role exists:', Group.objects.filter(name='Citizen').exists())
+            import json, urllib.request
+            from cas_app.chiro_auth import jwks_client
+            issuer = settings.KEYCLOAK_URL + '/realms/' + settings.KEYCLOAK_REALM
+            with urllib.request.urlopen(issuer+'/.well-known/openid-configuration', timeout=10) as response:
+                metadata = json.load(response)
+            print('Issuer matches discovery:', metadata['issuer'] == issuer)
+            keys = jwks_client(issuer).get_jwk_set().keys
+            print('Signing key endpoint reachable:', len(keys) > 0)
+            print('Published signing algorithms:', sorted(set(key.algorithm_name for key in keys if key.public_key_use == 'sig')))
+
             PY
             docker ps --filter name=keycloak --format '{{.Names}}'
