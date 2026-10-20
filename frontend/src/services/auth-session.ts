@@ -73,6 +73,11 @@ export async function signIn() {
   await keycloak.login({ redirectUri: `${window.location.origin}/login` });
 }
 
+export async function signUp() {
+  if (!keycloak) throw new Error("Chiro Auth is not configured.");
+  await keycloak.register({ redirectUri: `${window.location.origin}/login` });
+}
+
 export async function signOut() {
   localStorage.removeItem("token");
   localStorage.removeItem("user_groups");

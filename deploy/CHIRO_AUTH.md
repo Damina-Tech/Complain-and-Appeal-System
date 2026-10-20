@@ -26,3 +26,9 @@ The activation workflow validates the Keycloak redirect, backs up `.env`, retain
 `0002_workflow_schema` replaces four omitted migrations whose applied names were verified on the VPS. It creates the missing workflow schema on fresh databases and retains existing production tables when all four historical migrations were applied. `0006_chiro_identity` adds only nullable identity fields. The deployment creates a SQLite backup before migration and does not run the demo seed. The regression script checks this historical upgrade path and preservation of the existing user ID.
 
 Run **Verify live CAS browser login** after activation. It verifies rendering and the redirect to the Chiro Auth login form without signing in as a real user.
+
+## Applicant self-registration
+
+CAS login includes **Sign up as an applicant**, which opens a CAS introduction page and then the Keycloak registration flow with PKCE and the existing `/login` callback. No local password account or privileged role is created by the browser.
+
+Enable **Realm settings > Login > User registration** in the `chirocity` realm. Configure SMTP and email verification for applicants. Each applicant must receive `cas-api > CITIZEN` for own-case access. Assign it manually after review, or map it to a `CAS Applicants` group and make that a default group if all new realm users should automatically receive applicant access. A default group applies to all newly created users in this shared realm; it is not restricted to the CAS registration link. Staff roles must remain explicitly assigned.

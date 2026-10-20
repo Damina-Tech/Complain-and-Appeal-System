@@ -1,12 +1,12 @@
 "use client";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { configureAuth, initializeSso, getCachedAccessToken, signIn, signOut, type AuthSettings } from "@/services/auth-session";
+import { configureAuth, initializeSso, getCachedAccessToken, signIn, signUp, signOut, type AuthSettings } from "@/services/auth-session";
 import { authFetch, installAxiosAuth } from "@/services/auth-http";
 import { defaultRouteForRole } from "@/lib/role";
 
-type Session = { mode: "local" | "keycloak"; error: string | null; signIn: () => Promise<void>; signOut: () => Promise<void> };
-const Context = createContext<Session>({ mode: "keycloak", error: null, signIn, signOut });
+type Session = { mode: "local" | "keycloak"; error: string | null; signIn: () => Promise<void>; signUp: () => Promise<void>; signOut: () => Promise<void> };
+const Context = createContext<Session>({ mode: "keycloak", error: null, signIn, signUp, signOut });
 export const useChiroAuth = () => useContext(Context);
 let startup: Promise<AuthSettings> | undefined;
 function start() {
@@ -52,10 +52,10 @@ export function ChiroAuthProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     if (!ready || mode !== "keycloak") return;
-    if (!authorized && pathname !== "/auth/sign-in" && pathname !== "/login") router.replace("/auth/sign-in");
+    if (!authorized && pathname !== "/auth/sign-in" && pathname !== "/login" && pathname !== "/auth/sign-up") router.replace("/auth/sign-in");
     if (authorized && (pathname === "/" || pathname === "/login" || pathname?.startsWith("/auth"))) router.replace(defaultRouteForRole(role));
   }, [ready, mode, authorized, pathname, role, router]);
   if (!ready) return <div className="flex min-h-screen items-center justify-center">Loading CAS sign-in...</div>;
-  if (mode === "keycloak" && !authorized && pathname !== "/auth/sign-in" && pathname !== "/login") return <div className="p-8">Redirecting to sign-in...</div>;
-  return <Context.Provider value={{ mode, error, signIn, signOut }}>{children}</Context.Provider>;
+  if (mode === "keycloak" && !authorized && pathname !== "/auth/sign-in" && pathname !== "/login" && pathname !== "/auth/sign-up") return <div className="p-8">Redirecting to sign-in...</div>;
+  return <Context.Provider value={{ mode, error, signIn, signUp, signOut }}>{children}</Context.Provider>;
 }

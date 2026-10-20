@@ -28,7 +28,21 @@ jobs:
               const login = page.getByRole('button', { name: 'Sign in with Chiro Auth' });
               await login.waitFor({ timeout: 30000 });
               console.log('CAS central login screen rendered.');
-              await page.screenshot({ path: 'cas-login.png' });
+              for (const viewport of [{ width: 1920, height: 1080 }, { width: 768, height: 1024 }, { width: 375, height: 812 }]) {
+                await page.setViewportSize(viewport);
+                await page.getByRole('link', { name: 'Sign up as an applicant' }).waitFor();
+                const bounds = await page.getByTestId('cas-auth-card').boundingBox();
+                const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+                if (overflow || !bounds || bounds.x < 0 || bounds.x + bounds.width > viewport.width + 1 || bounds.y < 0) throw new Error('Cropped auth layout at '+JSON.stringify(viewport));
+                console.log('Auth layout fits:', JSON.stringify(viewport));
+                await page.screenshot({ path: `cas-login-${viewport.width}.png`, fullPage: true });
+              }
+              await page.getByRole('link', { name: 'Sign up as an applicant' }).click();
+              await page.getByRole('button', { name: 'Create applicant account' }).waitFor();
+              console.log('Applicant sign-up page rendered.');
+              await page.screenshot({ path: 'cas-applicant-signup.png', fullPage: true });
+              await page.getByRole('link', { name: 'Sign in', exact: true }).click();
+              await login.waitFor();
               await login.click();
               await page.waitForURL('https://auth.chirocity.gov.et/**', { timeout: 30000 });
               await page.locator('#username').waitFor({ timeout: 30000 });

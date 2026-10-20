@@ -13,7 +13,10 @@ export default function Signin() {
     {(failure || auth.error) && <p role="alert" className="text-red-600">{failure || auth.error}</p>}
     <button className="w-full rounded-lg bg-primary p-4 text-white" onClick={() => void auth.signIn().catch(e => setFailure(e.message))}>Sign in with Chiro Auth</button>
     <button className="w-full rounded-lg border p-4" onClick={() => void auth.signOut().catch(e => setFailure(e.message))}>Sign out / switch account</button>
-    <p className="text-sm">Your administrator must grant access to CAS.</p>
+    <div className="border-t border-stroke pt-5 dark:border-dark-3">
+      <p className="text-sm text-dark-5 dark:text-dark-6">New to the service?</p>
+      <Link href="/auth/sign-up" className="mt-2 inline-block font-semibold text-primary underline-offset-4 hover:underline">Sign up as an applicant</Link>
+    </div>
   </div>;
 
   return (

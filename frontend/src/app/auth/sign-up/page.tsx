@@ -1,6 +1,8 @@
 "use client";
 
 import { authFetch } from "@/services/auth-http";
+import { AuthPageShell } from "@/components/Auth/AuthPageShell";
+import { useChiroAuth } from "@/components/ChiroAuthProvider";
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -9,7 +11,7 @@ import InputGroup from "@/components/FormElements/InputGroup/index";
 import { Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { SuccessModal } from "@/components/ui/success-modal";
 
-export default function SignUpPage() {
+function LocalSignUpPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const router = useRouter();
   const [form, setForm] = useState({
@@ -572,3 +574,18 @@ export default function SignUpPage() {
 }
 
 
+
+export default function SignUpPage() {
+  const auth = useChiroAuth();
+  const [failure, setFailure] = useState<string | null>(null);
+  if (auth.mode !== "keycloak") return <LocalSignUpPage />;
+  return <AuthPageShell title="Sign up as an applicant" subtitle="Create your Chiro Auth account to submit complaints and appeals.">
+    <div className="space-y-5">
+      <p className="text-sm leading-6 text-dark-5 dark:text-dark-6">Your account lets you track your own cases, receive responses, and submit feedback.</p>
+      {failure && <p role="alert" className="text-sm text-red-600">{failure}</p>}
+      <button className="w-full rounded-lg bg-primary p-4 font-medium text-white" onClick={() => void auth.signUp().catch(error => setFailure(error.message))}>Create applicant account</button>
+      <p className="text-sm leading-6 text-dark-5 dark:text-dark-6">After registration, verify your email to finish setting up your account. Already use another city service? You can sign in with the same Chiro Auth account.</p>
+      <p className="text-sm">Already have an account? <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline">Sign in</Link></p>
+    </div>
+  </AuthPageShell>;
+}

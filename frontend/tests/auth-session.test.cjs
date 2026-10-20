@@ -16,6 +16,7 @@ function session() {
     constructor(options) { this.options = options; instances.push(this); }
     async init(options) { this.calls.push(['init', options]); return true; }
     async updateToken(seconds) { this.calls.push(['refresh', seconds]); if (this.failRefresh) throw new Error('Session expired'); return false; }
+    async register(options) { this.calls.push(['register', options]); }
     async login(options) { this.calls.push(['login', options]); }
     async logout(options) { this.calls.push(['logout', options]); }
     clearToken() { this.authenticated = false; this.token = undefined; this.onAuthLogout?.(); }
@@ -80,4 +81,11 @@ test('local mode retains compatibility and clears credentials on logout', async 
   const { auth, storage } = session(); auth.configureAuth({ ...settings, mode: 'local' });
   assert.equal(await auth.accessToken(), 'legacy-token');
   await auth.signOut(); assert.equal(storage.size, 0);
+});
+
+test('applicant registration uses the central registration flow and returns to CAS login', async () => {
+  const { auth, instances } = session(); auth.configureAuth(settings);
+  await auth.signUp();
+  assert.equal(instances[0].calls[0][0], 'register');
+  assert.equal(instances[0].calls[0][1].redirectUri, 'https://cas.chirocity.gov.et/login');
 });
