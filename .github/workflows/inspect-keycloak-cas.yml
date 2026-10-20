@@ -19,6 +19,7 @@ jobs:
             database=$(docker ps --filter label=com.docker.compose.project=chiro-auth --format '{{.Names}} {{.Image}}' | awk '$2 ~ /^postgres:/ { print $1 }')
             test -n "$database"
             docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$database" sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
+            SELECT name,verify_email FROM realm WHERE name='chirocity';
             SELECT c.client_id, p.name AS mapper, p.protocol_mapper_name, pc.name AS setting, pc.value
             FROM client c JOIN realm r ON r.id=c.realm_id
             JOIN protocol_mapper p ON p.client_id=c.id
