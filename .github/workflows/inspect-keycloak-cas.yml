@@ -39,6 +39,7 @@ jobs:
             LEFT JOIN client c ON c.id=role.client
             WHERE r.name='chirocity' AND g.name='CAS Applicants';
             SELECT c.client_id,c.full_scope_allowed FROM client c JOIN realm r ON r.id=c.realm_id WHERE r.name='chirocity' AND c.client_id='cas-web';
-            SELECT g.name AS default_group FROM default_groups d JOIN keycloak_group g ON g.id=d.group_id JOIN realm r ON r.id=d.realm_id WHERE r.name='chirocity';
+            SELECT format('SELECT g.name AS default_group FROM %I d JOIN keycloak_group g ON g.id=d.group_id JOIN realm r ON r.id=d.realm_id WHERE r.name=''chirocity''',table_name) FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE '%default%group%'
+            \gexec
             SELECT g.name AS applicant_membership FROM user_group_membership m JOIN keycloak_group g ON g.id=m.group_id WHERE m.user_id='ca5043a7-28c4-4a0e-a15a-eed564ab43a8';
             SQL
