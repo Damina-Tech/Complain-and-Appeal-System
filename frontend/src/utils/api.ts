@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isCentralAuth, signOut } from "@/services/auth-session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -16,6 +17,7 @@ export const loginUser = async (username: string, password: string) => {
 };
 
 export const logoutUser = async () => {
+  if (isCentralAuth()) return signOut();
   try {
     await axios.get(`${API_URL}/logout/`);
   } catch (error: any) {

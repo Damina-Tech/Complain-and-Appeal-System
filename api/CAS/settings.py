@@ -64,6 +64,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
+    'cas_app.chiro_auth.CentralIdentityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -79,8 +80,7 @@ REST_FRAMEWORK = {
     
     'DEFAULT_AUTHENTICATION_CLASSES': (
         
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
+        'cas_app.chiro_auth.ChiroAuthentication',
     )
     
 }
@@ -192,3 +192,18 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Centralized identity configuration. Local mode is retained until explicit activation.
+AUTH_MODE = os.environ.get('AUTH_MODE', 'local')
+KEYCLOAK_URL = os.environ.get('KEYCLOAK_URL', 'https://auth.chirocity.gov.et').rstrip('/')
+KEYCLOAK_REALM = os.environ.get('KEYCLOAK_REALM', 'chirocity')
+KEYCLOAK_CLIENT_ID = os.environ.get('KEYCLOAK_CLIENT_ID', 'cas-web')
+KEYCLOAK_AUDIENCE = os.environ.get('KEYCLOAK_AUDIENCE', 'cas-api')
+if AUTH_MODE not in ('local', 'keycloak'):
+    raise RuntimeError('AUTH_MODE must be local or keycloak')
+if AUTH_MODE == 'keycloak':
+    import re
+    from urllib.parse import urlparse
+    parsed = urlparse(KEYCLOAK_URL)
+    if not parsed.netloc or parsed.scheme not in ('http', 'https') or (not DEBUG and parsed.scheme != 'https') or not re.fullmatch(r'[A-Za-z0-9._-]+', KEYCLOAK_REALM) or not KEYCLOAK_CLIENT_ID or not KEYCLOAK_AUDIENCE:
+        raise RuntimeError('Invalid Chiro Auth configuration; production requires HTTPS.')

@@ -1,4 +1,6 @@
 "use client";
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -71,7 +73,7 @@ const mapRow = (g: ApiGroup): Row => ({
 export default function RolesPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
 
   // Check if user is Admin
   const [isAdmin, setIsAdmin] = useState(false);
@@ -141,7 +143,7 @@ export default function RolesPage() {
     let nextUrl: string | null = startUrl;
 
     while (nextUrl) {
-      const res: Response = await fetch(nextUrl, { headers: authHeaders, cache: "no-store" });
+      const res: Response = await authFetch(nextUrl, { headers: authHeaders, cache: "no-store" });
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
       const data: any = await res.json();
 
@@ -174,7 +176,7 @@ export default function RolesPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingPermissions(true);
-      const res: Response = await fetch(`${API_URL}/groups/all-permissions/`, {
+      const res: Response = await authFetch(`${API_URL}/groups/all-permissions/`, {
         headers: authHeaders,
         cache: "no-store",
       });
@@ -211,7 +213,7 @@ export default function RolesPage() {
           let updated: Record<string | number, number | null> = {};
           for (const gid of missing) {
             try {
-              const res = await fetch(`${API_URL}/groups/${gid}/users/`, {
+              const res = await authFetch(`${API_URL}/groups/${gid}/users/`, {
                 headers: authHeaders,
                 cache: "no-store",
               });
@@ -302,7 +304,7 @@ export default function RolesPage() {
       setCreating(true);
       
       // Create role
-      const res = await fetch(`${API_URL}/groups/`, {
+      const res = await authFetch(`${API_URL}/groups/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -322,7 +324,7 @@ export default function RolesPage() {
       
       // Set permissions if any selected
       if (selectedPermissions.length > 0) {
-        const permRes = await fetch(`${API_URL}/groups/${newGroup.id}/set_permissions/`, {
+        const permRes = await authFetch(`${API_URL}/groups/${newGroup.id}/set_permissions/`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -363,7 +365,7 @@ export default function RolesPage() {
     // Load permissions for this role
     if (API_URL && token) {
       try {
-        const res = await fetch(`${API_URL}/groups/${row.id}/permissions/`, {
+        const res = await authFetch(`${API_URL}/groups/${row.id}/permissions/`, {
           headers: authHeaders,
           cache: "no-store",
         });
@@ -392,7 +394,7 @@ export default function RolesPage() {
       setEditing(true);
       
       // Update role name
-      const res = await fetch(`${API_URL}/groups/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/groups/${selected.id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -408,7 +410,7 @@ export default function RolesPage() {
       }
       
       // Update permissions
-      const permRes = await fetch(`${API_URL}/groups/${selected.id}/set_permissions/`, {
+      const permRes = await authFetch(`${API_URL}/groups/${selected.id}/set_permissions/`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -444,7 +446,7 @@ export default function RolesPage() {
 
     try {
       setDeleting(true);
-      const res = await fetch(`${API_URL}/groups/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/groups/${selected.id}/`, {
         method: "DELETE",
         headers: { ...authHeaders },
       });

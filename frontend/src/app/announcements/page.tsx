@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
@@ -55,7 +57,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await authFetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -93,7 +95,7 @@ function toNames(
 export default function AnnouncementsPage() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const role  = typeof window !== "undefined" ? localStorage.getItem("role")  : null;
 
   const canManage = !!role && allowedToManage.has(role);
@@ -233,7 +235,7 @@ export default function AnnouncementsPage() {
 
     try {
       setCreating(true);
-      const res = await fetch(`${API_URL}/announcements/`, {
+      const res = await authFetch(`${API_URL}/announcements/`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(payload),
@@ -301,7 +303,7 @@ export default function AnnouncementsPage() {
 
     try {
       setSaving(true);
-      const res = await fetch(`${API_URL}/announcements/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/announcements/${selected.id}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(payload),
@@ -328,7 +330,7 @@ export default function AnnouncementsPage() {
     if (!canManage) return setEditError("You do not have permission.");
     try {
       setDeleting(true);
-      const res = await fetch(`${API_URL}/announcements/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/announcements/${selected.id}/`, {
         method: "DELETE",
         headers,
       });

@@ -1,0 +1,88 @@
+name: Configure CAS Chiro Auth
+on:
+  workflow_dispatch:
+    inputs:
+      link_email:
+        description: Existing CAS email to link (optional; requires verified Keycloak user ID)
+        required: false
+        type: string
+      keycloak_user_id:
+        description: Verified Keycloak user ID for the existing CAS account
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: cas-production
+  cancel-in-progress: false
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/Complain-and-Appeal-System' }}
+          LINK_EMAIL: ${{ inputs.link_email }}
+          KEYCLOAK_SUB: ${{ inputs.keycloak_user_id }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR,LINK_EMAIL,KEYCLOAK_SUB
+          command_timeout: 12m
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            export CAS_DATA_DIR=/srv/cas
+            compose() { docker compose --env-file .env -f docker-compose.yml -f docker-compose.domains.yml "$@"; }
+            # Confirm the realm, public client, redirect URI and API network access first.
+            compose exec -T cas-api python manage.py shell <<'PY'
+            import json, urllib.request, urllib.parse, urllib.error
+            from django.conf import settings
+            from django.contrib.auth.models import Group
+            base = settings.KEYCLOAK_URL + '/realms/' + settings.KEYCLOAK_REALM
+            with urllib.request.urlopen(base + '/.well-known/openid-configuration', timeout=15) as response:
+                metadata = json.load(response)
+            query = urllib.parse.urlencode(dict(client_id=settings.KEYCLOAK_CLIENT_ID, redirect_uri='https://cas.chirocity.gov.et/login', response_type='code', scope='openid profile email', code_challenge='mZPEmy0zntvbLvc8JL37x5xP3d3Md5k5s5mXkTe5YsQ', code_challenge_method='S256', state='cas-preflight', nonce='cas-preflight', prompt='none'))
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, *args): return None
+            try:
+                urllib.request.build_opener(NoRedirect).open(metadata['authorization_endpoint']+'?'+query, timeout=15)
+                raise RuntimeError('cas-web client redirect check did not return a redirect.')
+            except urllib.error.HTTPError as error:
+                if error.code != 302 or not error.headers.get('Location','').startswith('https://cas.chirocity.gov.et/login?'):
+                    raise RuntimeError('cas-web client or redirect URI is not ready. HTTP '+str(error.code))
+            roles = [(name, Group.objects.get(name=name).permissions.count()) for name in ['Admin','Mayor Office','Director','Focal Person','Citizen']]
+            print('CAS role mappings:', roles)
+            if not dict(roles)['Admin']: raise RuntimeError('CAS administrator permissions are missing.')
+            print('Chiro Auth realm and cas-web redirect preflight passed.')
+            PY
+            if [ -n "$LINK_EMAIL" ] || [ -n "$KEYCLOAK_SUB" ]; then
+              test -n "$LINK_EMAIL" && test -n "$KEYCLOAK_SUB"
+              compose exec -T -e LINK_EMAIL -e KEYCLOAK_SUB cas-api python manage.py link_chiro_user
+            fi
+            install -d -m 700 /srv/cas-auth-backups
+            backup="/srv/cas-auth-backups/env-$(date -u +%Y%m%dT%H%M%SZ)"
+            cp -p .env "$backup"
+            chmod 600 "$backup"
+            rollback() { cat "$backup" > .env; compose up -d --no-deps cas-api || true; }
+            trap rollback EXIT
+            python3 <<'PY'
+            from pathlib import Path
+            p = Path('.env')
+            lines = [line for line in p.read_text().splitlines() if not line.strip().startswith('AUTH_MODE=')]
+            p.write_text('\n'.join(lines) + '\nAUTH_MODE=keycloak\n')
+            p.chmod(0o600)
+            PY
+            compose up -d --no-deps --wait --wait-timeout 180 cas-api
+            compose exec -T cas-api python manage.py shell <<'PY'
+            from django.test import Client
+            client = Client(HTTP_HOST='cas-api.chirocity.gov.et')
+            response = client.get('/api/auth/config/')
+            assert response.status_code == 200 and response.json()['mode'] == 'keycloak', 'Central authentication did not activate.'
+            assert client.post('/api/login/', {}).status_code == 403, 'Local password login was not disabled.'
+            print('CAS Chiro Auth activated; local password login is disabled.')
+            PY
+            trap - EXIT

@@ -1,5 +1,6 @@
 "use client";
 
+import { ChiroAuthProvider } from "@/components/ChiroAuthProvider";
 import { SidebarProvider } from "@/components/Layouts/sidebar/sidebar-context";
 import { ThemeProvider } from "next-themes";
 import { initI18n } from "@/lib/i18n";
@@ -12,7 +13,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <I18nextProvider i18n={i18nInstance}>
       <ThemeProvider defaultTheme="light" attribute="class">
-        <SidebarProvider>{children}</SidebarProvider>
+        <ChiroAuthProvider><SidebarProvider>{children}</SidebarProvider></ChiroAuthProvider>
       </ThemeProvider>
     </I18nextProvider>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -133,7 +135,7 @@ export default function ComplaintAppealPage() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL; // e.g. http://localhost:8000/api
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
   const userId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
@@ -165,7 +167,7 @@ export default function ComplaintAppealPage() {
     let nextUrl: string | null = `${baseUrl}/cases/`;
 
     while (nextUrl) {
-      const res: Response = await fetch(nextUrl, { headers, cache: "no-store" });
+      const res: Response = await authFetch(nextUrl, { headers, cache: "no-store" });
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
       const data: any = await res.json();
 
@@ -224,7 +226,7 @@ export default function ComplaintAppealPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingUsers(true);
-      const res = await fetch(`${API_URL}/users/`, {
+      const res = await authFetch(`${API_URL}/users/`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -540,7 +542,7 @@ export default function ComplaintAppealPage() {
               setFormErrors({ general: "NEXT_PUBLIC_API_URL is not set" });
               return;
             }
-            const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+            const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
             if (!token) {
               setFormErrors({ general: "You are not authenticated. Please sign in." });
               return;
@@ -569,7 +571,7 @@ export default function ComplaintAppealPage() {
                 });
               }
               
-              const res = await fetch(`${API_URL}/cases/`, {
+              const res = await authFetch(`${API_URL}/cases/`, {
                 method: "POST",
                 headers: {
                   Authorization: `Bearer ${token}`,
@@ -897,7 +899,7 @@ export default function ComplaintAppealPage() {
                 payload.national_id = userForm.national_id.trim();
               }
 
-              const res = await fetch(`${API_URL}/users/`, {
+              const res = await authFetch(`${API_URL}/users/`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -1225,7 +1227,7 @@ export default function ComplaintAppealPage() {
                 if (!caseToDelete || !API_URL || !token) return;
                 try {
                   setDeleting(true);
-                  const res = await fetch(`${API_URL}/cases/${caseToDelete.id}/`, {
+                  const res = await authFetch(`${API_URL}/cases/${caseToDelete.id}/`, {
                     method: "DELETE",
                     headers: {
                       Authorization: `Bearer ${token}`,

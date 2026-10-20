@@ -1,5 +1,6 @@
 import os
 from django.core.management.base import BaseCommand, CommandError
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from cas_app.models import RoleHierarchy
@@ -20,6 +21,9 @@ class Command(BaseCommand):
                 target = 'Director' if name == 'Focal Person' else 'Mayor Office'
                 target_group, _ = Group.objects.get_or_create(name=target)
                 hierarchy.can_transfer_to.add(target_group)
+        if settings.AUTH_MODE == "keycloak":
+            self.stdout.write("CAS roles configured; centralized authentication manages accounts.")
+            return
         User = get_user_model()
         if User.objects.filter(groups__name='Admin', is_active=True).exists() or User.objects.filter(is_superuser=True, is_active=True).exists():
             self.stdout.write('Existing administrator retained; password unchanged.')

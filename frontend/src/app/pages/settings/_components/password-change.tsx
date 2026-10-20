@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { ShowcaseSection } from "@/components/Layouts/showcase-section";
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +24,7 @@ export function PasswordChangeForm() {
   const [successOpen, setSuccessOpen] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +59,7 @@ export function PasswordChangeForm() {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/password/change/`, {
+      const res = await authFetch(`${API_URL}/password/change/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

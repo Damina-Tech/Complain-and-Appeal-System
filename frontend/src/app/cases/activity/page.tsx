@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -113,7 +115,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await authFetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -134,7 +136,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise
 
 export default function CaseActivityPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Current user context
@@ -322,7 +324,7 @@ export default function CaseActivityPage() {
       reason: reason.trim(),
     };
 
-    const res = await fetch(TRANSFER_URL(cid), {
+    const res = await authFetch(TRANSFER_URL(cid), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(payload),
@@ -349,7 +351,7 @@ export default function CaseActivityPage() {
       reason: reason.trim(),
     };
 
-    const res = await fetch(ASSIGN_URL(cid), {
+    const res = await authFetch(ASSIGN_URL(cid), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(payload),
@@ -386,7 +388,7 @@ export default function CaseActivityPage() {
     if (!selectedRow || !API_URL || !token) return;
     try {
       setDeleting(true);
-      const res = await fetch(deleteEndpoint(selectedRow), {
+      const res = await authFetch(deleteEndpoint(selectedRow), {
         method: "DELETE",
         headers,
       });

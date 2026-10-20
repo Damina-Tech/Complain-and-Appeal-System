@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/services/auth-http";
 import { EmailIcon, PasswordIcon } from "@/assets/icons";
 import Link from "next/link";
 import React, { useState } from "react";
@@ -59,7 +60,7 @@ export default function SigninWithPassword() {
       // Fetch user groups from /auth/me endpoint after login
       if (token) {
         try {
-          const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me/`, {
+          const meRes = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me/`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
           });

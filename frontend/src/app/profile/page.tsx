@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -36,7 +38,7 @@ export default function ProfilePage() {
   const hasLoadedRef = useRef(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
 
   // Generate avatar from initials
   const getAvatarUrl = (user: UserData | null) => {
@@ -62,7 +64,7 @@ export default function ProfilePage() {
       setLoading(true);
       setError("");
       // First get current user info to get the user ID
-      const meRes = await fetch(`${API_URL}/auth/me/`, {
+      const meRes = await authFetch(`${API_URL}/auth/me/`, {
         headers,
         cache: "no-store",
       });
@@ -72,7 +74,7 @@ export default function ProfilePage() {
       
       if (!userId) throw new Error("User ID not found");
       
-      const res = await fetch(`${API_URL}/users/${userId}/`, {
+      const res = await authFetch(`${API_URL}/users/${userId}/`, {
         headers,
         cache: "no-store",
       });
@@ -113,7 +115,7 @@ export default function ProfilePage() {
       const formData = new FormData();
       formData.append("profile_image", file);
 
-      const res = await fetch(`${API_URL}/users/${userData.id}/`, {
+      const res = await authFetch(`${API_URL}/users/${userData.id}/`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,

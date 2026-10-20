@@ -1,3 +1,5 @@
+from django.conf import settings
+from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
@@ -90,6 +92,8 @@ class UserViewSet(viewsets.ModelViewSet):
         return User.objects.none()
 
     def perform_create(self, serializer):
+        if settings.AUTH_MODE == "keycloak":
+            raise PermissionDenied("Create accounts and assign CAS roles in Chiro Auth.")
         # Check if user has add_user permission
         if self.request.user.is_authenticated:
             has_add_user = self.request.user.has_perm("cas_app.add_user")
@@ -135,6 +139,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 user.save(update_fields=["office"])
 
     def perform_update(self, serializer):
+        if settings.AUTH_MODE == "keycloak" and {"password", "groups", "username", "email"}.intersection(serializer.validated_data):
+            raise PermissionDenied("Manage account credentials and roles in Chiro Auth.")
         # Only self or staff gets here (checked by IsSelfOrStaff)
         user = serializer.save(status_changed_by=self.request.user)
         pwd = serializer.validated_data.get("password")

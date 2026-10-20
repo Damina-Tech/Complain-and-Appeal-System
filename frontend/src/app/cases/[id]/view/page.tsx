@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useParams, useRouter } from "next/navigation";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -78,7 +80,7 @@ const fetchAllPaginated = async <T,>(
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await authFetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -101,7 +103,7 @@ export default function CaseViewPage() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Data
@@ -183,7 +185,7 @@ export default function CaseViewPage() {
       
       // Fetch from API if not in localStorage
       try {
-        const res = await fetch(`${API_URL}/auth/me/`, {
+        const res = await authFetch(`${API_URL}/auth/me/`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -222,7 +224,7 @@ export default function CaseViewPage() {
     const loadUserHierarchy = async () => {
       if (!API_URL || !token) return;
       try {
-        const res = await fetch(`${API_URL}/role-hierarchy/current-user/`, { headers });
+        const res = await authFetch(`${API_URL}/role-hierarchy/current-user/`, { headers });
         if (res.ok) {
           const data = await res.json();
           setUserHierarchy(data);
@@ -247,7 +249,7 @@ export default function CaseViewPage() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`${API_URL}/cases/${id}/`, { headers });
+      const res = await authFetch(`${API_URL}/cases/${id}/`, { headers });
       if (!res.ok) throw new Error(`Failed to load case: ${res.status}`);
       const c: ApiCase = await res.json();
       setCaseData(c);
@@ -267,7 +269,7 @@ export default function CaseViewPage() {
     if (!API_URL || !token) return;
     try {
       setLoadingTransferTargets(true);
-      const res = await fetch(`${API_URL}/role-hierarchy/transfer-targets/`, { headers });
+      const res = await authFetch(`${API_URL}/role-hierarchy/transfer-targets/`, { headers });
       if (res.ok) {
         const data = await res.json();
         const targets = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
@@ -334,7 +336,7 @@ export default function CaseViewPage() {
     try {
       setLoadingMembers(true);
       // Use the new assignable-users endpoint which filters based on role
-      const res = await fetch(`${API_URL}/assignments/assignable-users/`, { headers });
+      const res = await authFetch(`${API_URL}/assignments/assignable-users/`, { headers });
       if (res.ok) {
         const data = await res.json();
         const assignableUsers = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
@@ -362,7 +364,7 @@ export default function CaseViewPage() {
     if (!API_URL || !token || !id) return;
     try {
       setLoadingAssignment(true);
-      const res = await fetch(`${API_URL}/assignments/by-case/${id}/`, { headers });
+      const res = await authFetch(`${API_URL}/assignments/by-case/${id}/`, { headers });
       if (res.ok) {
         const data = await res.json();
         // Handle paginated response
@@ -381,7 +383,7 @@ export default function CaseViewPage() {
           } else if (toUserId) {
             // Try to fetch user details if not in members list
             try {
-              const userRes = await fetch(`${API_URL}/users/${toUserId}/`, { headers });
+              const userRes = await authFetch(`${API_URL}/users/${toUserId}/`, { headers });
               if (userRes.ok) {
                 const userData = await userRes.json();
                 userName = `${userData.first_name || ""} ${userData.last_name || ""}`.trim() || userData.email || userData.username || "Unknown User";
@@ -413,7 +415,7 @@ export default function CaseViewPage() {
     if (!API_URL || !token || !id) return;
     try {
       setLoadingTransfer(true);
-      const res = await fetch(`${API_URL}/transfers/by-case/${id}/`, { headers });
+      const res = await authFetch(`${API_URL}/transfers/by-case/${id}/`, { headers });
       if (res.ok) {
         const data = await res.json();
         // Handle paginated response
@@ -432,7 +434,7 @@ export default function CaseViewPage() {
           } else if (toOfficeId) {
             // Try to fetch office details if not in offices list
             try {
-              const officeRes = await fetch(`${API_URL}/offices/${toOfficeId}/`, { headers });
+              const officeRes = await authFetch(`${API_URL}/offices/${toOfficeId}/`, { headers });
               if (officeRes.ok) {
                 const officeData = await officeRes.json();
                 officeName = officeData.name || "Unknown Office";
@@ -613,7 +615,7 @@ export default function CaseViewPage() {
         to_office_id: String(selectedOfficeId),
         reason: transferReason.trim(),
       };
-      const res = await fetch(TRANSFER_URL, {
+      const res = await authFetch(TRANSFER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(payload),
@@ -670,7 +672,7 @@ export default function CaseViewPage() {
         payload.from_user_id = String(currentUserId);
       }
 
-      const res = await fetch(ASSIGN_URL, {
+      const res = await authFetch(ASSIGN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(payload),
@@ -696,7 +698,7 @@ export default function CaseViewPage() {
     try {
       setError("");
       const apiStatus = uiToApiStatus[selectedStatusUI] || "pending";
-      const res = await fetch(`${API_URL}/cases/${id}/`, {
+      const res = await authFetch(`${API_URL}/cases/${id}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ status: apiStatus }),

@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken, endSession } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
@@ -15,6 +17,7 @@ export function useCurrentUser() {
   const router = useRouter();
 
   const clearSessionAndRedirect = useCallback(() => {
+    endSession();
     // Clear all auth data
     localStorage.removeItem("token");
     localStorage.removeItem("role");
@@ -29,7 +32,7 @@ export function useCurrentUser() {
   }, [router]);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getCachedAccessToken();
     if (!token) {
       setLoading(false);
       setUser(null);
@@ -41,7 +44,7 @@ export function useCurrentUser() {
     (async () => {
       try {
         // Adjust this endpoint to your backend's "who am I" route
-        const res = await fetch(
+        const res = await authFetch(
           `${process.env.NEXT_PUBLIC_API_URL}/auth/me/`,
           {
             headers: {

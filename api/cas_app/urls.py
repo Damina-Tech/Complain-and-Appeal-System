@@ -17,6 +17,7 @@ router.register(r'feedbacks', CaseFeedbackViewSet, basename='feedback')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
+    path("auth/config/", auth_config, name="auth_config"),
     path("", include(router.urls)),
     path('login/', user_login, name='user_login'),
     path('logout/', logout_view, name='logout_view'),

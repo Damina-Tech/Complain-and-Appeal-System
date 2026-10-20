@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { UploadIcon } from "@/assets/icons";
 import { ShowcaseSection } from "@/components/Layouts/showcase-section";
 import Image from "next/image";
@@ -18,7 +20,7 @@ export function UploadPhotoForm() {
   const [successMsg, setSuccessMsg] = useState("");
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const [userId, setUserId] = useState<string | number | null>(null);
   const hasLoadedRef = useRef(false);
 
@@ -52,7 +54,7 @@ export function UploadPhotoForm() {
       try {
         setLoading(true);
         // First get current user info to get the user ID
-        const meRes = await fetch(`${API_URL}/auth/me/`, {
+        const meRes = await authFetch(`${API_URL}/auth/me/`, {
           headers,
           cache: "no-store",
         });
@@ -63,7 +65,7 @@ export function UploadPhotoForm() {
         if (!currentUserId) throw new Error("User ID not found");
         setUserId(currentUserId);
         
-        const res = await fetch(`${API_URL}/users/${currentUserId}/`, {
+        const res = await authFetch(`${API_URL}/users/${currentUserId}/`, {
           headers,
           cache: "no-store",
         });
@@ -110,7 +112,7 @@ export function UploadPhotoForm() {
       const formData = new FormData();
       formData.append("profile_image", file);
 
-      const res = await fetch(`${API_URL}/users/${userId}/`, {
+      const res = await authFetch(`${API_URL}/users/${userId}/`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -149,7 +151,7 @@ export function UploadPhotoForm() {
         Authorization: `Bearer ${token}`,
       };
       
-      const res = await fetch(`${API_URL}/users/${userId}/`, {
+      const res = await authFetch(`${API_URL}/users/${userId}/`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({ profile_image: null }),

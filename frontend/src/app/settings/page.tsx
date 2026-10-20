@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import { cn } from "@/lib/utils";
@@ -11,7 +13,7 @@ import { Card } from "@/components/ui/card";
 export default function SettingsPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,10 +51,10 @@ export default function SettingsPage() {
         }
 
         // Fetch from API if not in localStorage
-        const token = localStorage.getItem("token");
+        const token = getCachedAccessToken();
         if (token) {
           const API_URL = process.env.NEXT_PUBLIC_API_URL;
-          const res = await fetch(`${API_URL}/auth/me/`, {
+          const res = await authFetch(`${API_URL}/auth/me/`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
           });

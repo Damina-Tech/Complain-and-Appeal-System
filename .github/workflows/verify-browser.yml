@@ -1,0 +1,51 @@
+name: Verify live CAS browser login
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --no-audit --no-fund playwright-core
+      - name: Verify CAS renders and reaches Chiro Auth
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright-core');
+          (async () => {
+            const browser = await chromium.launch({ channel: 'chrome', args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            try {
+              const errors = [];
+              page.on('pageerror', error => { errors.push(error.message); console.log('PAGE ERROR', error.message); });
+              page.on('requestfailed', req => console.log('REQUEST FAILED', new URL(req.url()).origin + new URL(req.url()).pathname, req.failure()?.errorText));
+              page.on('console', msg => { if (msg.type() === 'error') console.log('BROWSER ERROR', msg.text()); });
+              await page.goto('https://cas.chirocity.gov.et/auth/sign-in', { waitUntil: 'domcontentloaded', timeout: 60000 });
+              const login = page.getByRole('button', { name: 'Sign in with Chiro Auth' });
+              await login.waitFor({ timeout: 30000 });
+              console.log('CAS central login screen rendered.');
+              await page.screenshot({ path: 'cas-login.png' });
+              await login.click();
+              await page.waitForURL('https://auth.chirocity.gov.et/**', { timeout: 30000 });
+              await page.locator('#username').waitFor({ timeout: 30000 });
+              console.log('Chiro Auth username/password form reached.');
+              await page.screenshot({ path: 'chiro-auth-login.png' });
+              if (errors.length) throw new Error(errors.join('\n'));
+              console.log('No JavaScript runtime errors.');
+            } catch (error) {
+              console.log('Visible page:', (await page.locator('body').innerText()).slice(0, 1800));
+              await page.screenshot({ path: 'cas-failure.png' });
+              throw error;
+            } finally { await browser.close(); }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-browser-check
+          path: '*.png'
+          retention-days: 1

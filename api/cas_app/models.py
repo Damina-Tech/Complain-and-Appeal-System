@@ -4,6 +4,8 @@ from django.contrib.auth.models import Group
 # Create your models here.
 
 class User(AbstractUser):
+    keycloak_sub = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    keycloak_issuer = models.CharField(max_length=500, null=True, blank=True)
     national_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True) 
     address = models.TextField(null=True, blank=True)  # Optional address field

@@ -1,5 +1,6 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultRouteForRole } from "@/lib/role";
@@ -10,7 +11,7 @@ export default function RootPage() {
 
   useEffect(() => {
     // Check if user is authenticated
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
     
     if (!token) {
       // Not authenticated - redirect to sign-in

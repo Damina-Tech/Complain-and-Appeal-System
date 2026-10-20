@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -65,7 +67,7 @@ const fetchAllPaginated = async <T,>(
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await authFetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -123,7 +125,7 @@ const dueIsoOf = (r: AssignmentRecord) => r.due_date || r.countdown_days || null
 
 export default function MyAssignedCasesPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const currentUserId =
     typeof window !== "undefined" ? localStorage.getItem("user_id") || "" : "";
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
@@ -229,7 +231,7 @@ export default function MyAssignedCasesPage() {
     });
 
     const fetchCaseTitles = Array.from(missingCaseIds).map(async (cid) => {
-      const res = await fetch(`${API_URL}/cases/${cid}/`, { headers, cache: "no-store" });
+      const res = await authFetch(`${API_URL}/cases/${cid}/`, { headers, cache: "no-store" });
       if (!res.ok) return;
       const c: ApiCase = await res.json();
       if (c?.id != null) {
@@ -238,7 +240,7 @@ export default function MyAssignedCasesPage() {
     });
 
     const fetchUsers = Array.from(missingFromUserIds).map(async (uid) => {
-      const res = await fetch(`${API_URL}/users/${uid}/`, { headers, cache: "no-store" });
+      const res = await authFetch(`${API_URL}/users/${uid}/`, { headers, cache: "no-store" });
       if (!res.ok) return;
       const u: ApiUser = await res.json();
       if (u?.id != null) {

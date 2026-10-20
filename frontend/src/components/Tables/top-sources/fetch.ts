@@ -1,3 +1,5 @@
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 // src/components/Tables/top-sources/fetch.ts
 
 type UIMetric = {
@@ -17,10 +19,7 @@ const channelLabels: Record<string, string> = {
 export async function getTopSources(): Promise<UIMetric[]> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   
-  // Get token from cookies (server-side) - await cookies() in Next.js 15+
-  const { cookies } = await import("next/headers");
-  const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
+  const token = getCachedAccessToken();
 
   if (!API_URL || !token) {
     return [];
@@ -28,7 +27,7 @@ export async function getTopSources(): Promise<UIMetric[]> {
 
   try {
     // Fetch all cases
-    const res = await fetch(`${API_URL}/cases/`, {
+    const res = await authFetch(`${API_URL}/cases/`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",

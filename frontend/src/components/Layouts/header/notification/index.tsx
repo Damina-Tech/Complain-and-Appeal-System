@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import {
   Dropdown,
   DropdownContent,
@@ -39,7 +41,7 @@ export function Notification() {
   const pathname = usePathname();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   // Track if we've loaded initial data
@@ -62,11 +64,11 @@ export function Notification() {
       
       // Load both notifications and unread count in parallel
       const [notifsRes, countRes] = await Promise.all([
-        fetch(`${API_URL}/notifications/?limit=30`, {
+        authFetch(`${API_URL}/notifications/?limit=30`, {
           headers,
           cache: "no-store",
         }),
-        fetch(`${API_URL}/notifications/unread_count/`, {
+        authFetch(`${API_URL}/notifications/unread_count/`, {
           headers,
           cache: "default",
         }),
@@ -111,7 +113,7 @@ export function Notification() {
   const markAsRead = async (notificationId: number | string) => {
     if (!API_URL || !token) return;
     try {
-      const res = await fetch(`${API_URL}/notifications/${notificationId}/mark_read/`, {
+      const res = await authFetch(`${API_URL}/notifications/${notificationId}/mark_read/`, {
         method: "POST",
         headers,
       });
@@ -129,7 +131,7 @@ export function Notification() {
   const markAllAsRead = async () => {
     if (!API_URL || !token) return;
     try {
-      const res = await fetch(`${API_URL}/notifications/mark_all_read/`, {
+      const res = await authFetch(`${API_URL}/notifications/mark_all_read/`, {
         method: "POST",
         headers,
       });

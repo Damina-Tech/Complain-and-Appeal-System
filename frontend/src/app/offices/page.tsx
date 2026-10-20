@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -68,7 +70,7 @@ export default function OfficesPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
 
   const authHeaders: HeadersInit | undefined = token
     ? { Authorization: `Bearer ${token}` }
@@ -141,7 +143,7 @@ export default function OfficesPage() {
       if (authHeaders) {
         requestInit.headers = authHeaders;
       }
-      const res: Response = await fetch(nextUrl, requestInit);
+      const res: Response = await authFetch(nextUrl, requestInit);
       if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
       const data: any = await res.json();
 
@@ -304,7 +306,7 @@ export default function OfficesPage() {
             : Number(createForm.representative_id),
       };
 
-      const res = await fetch(`${API_URL}/offices/`, {
+      const res = await authFetch(`${API_URL}/offices/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -378,7 +380,7 @@ export default function OfficesPage() {
             : Number(editForm.representative_id),
       };
 
-      const res = await fetch(`${API_URL}/offices/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/offices/${selected.id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -414,7 +416,7 @@ export default function OfficesPage() {
 
     try {
       setDeleting(true);
-      const res = await fetch(`${API_URL}/offices/${selected.id}/`, {
+      const res = await authFetch(`${API_URL}/offices/${selected.id}/`, {
         method: "DELETE",
         headers: authHeaders,
       });

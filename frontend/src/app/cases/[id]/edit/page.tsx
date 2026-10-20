@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useParams, useRouter } from "next/navigation";
 import InputGroup from "@/components/FormElements/InputGroup";
 import { TextAreaGroup } from "@/components/FormElements/InputGroup/text-area";
@@ -47,12 +49,12 @@ export default function EditCasePage() {
   useEffect(() => {
     const load = async () => {
       if (!API_URL || !id) return;
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
       if (!token) return;
       try {
         setLoading(true);
         setError("");
-        const res = await fetch(`${API_URL}/cases/${id}/`, {
+        const res = await authFetch(`${API_URL}/cases/${id}/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
@@ -163,7 +165,7 @@ export default function EditCasePage() {
       setFieldErrors({ general: "NEXT_PUBLIC_API_URL is not set" });
       return;
     }
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
     if (!token) {
       setFieldErrors({ general: "You are not authenticated. Please sign in." });
       return;
@@ -183,7 +185,7 @@ export default function EditCasePage() {
         priority: caseData.priority,
         channel: caseData.channel,
       };
-      const baseRes = await fetch(`${API_URL}/cases/${id}/`, {
+      const baseRes = await authFetch(`${API_URL}/cases/${id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -277,7 +279,7 @@ export default function EditCasePage() {
           form.append("new_files[]", file);
         });
 
-        const attRes = await fetch(`${API_URL}/cases/${id}/`, {
+        const attRes = await authFetch(`${API_URL}/cases/${id}/`, {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,

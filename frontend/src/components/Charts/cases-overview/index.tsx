@@ -1,3 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
 import { PeriodPicker } from "@/components/period-picker";
 import { standardFormat } from "@/lib/format-number";
 import { cn } from "@/lib/utils";
@@ -6,8 +8,14 @@ import { CasesOverviewChart } from "./chart";
 
 type PropsType = { timeFrame?: string; className?: string };
 
-export async function CasesOverview({ timeFrame = "monthly", className }: PropsType) {
-  const data = await getCasesOverviewData(timeFrame);
+export function CasesOverview({ timeFrame = "monthly", className }: PropsType) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof getCasesOverviewData>> | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getCasesOverviewData(timeFrame).then(value => { if (active) setData(value); });
+    return () => { active = false; };
+  }, [timeFrame]);
+  if (!data) return <div className="p-6">Loading report...</div>;
 
   return (
     <div className={cn(

@@ -1,3 +1,5 @@
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 // src/services/case-reports-services.ts
 export type Point = { x: string; y: number };
 export type Slice = { label: string; value: number };
@@ -149,10 +151,7 @@ export async function getCasesOverviewData(
 ): Promise<{ open: Point[]; resolved: Point[] }> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   
-  // Get token from cookies (server-side) - await cookies() in Next.js 15+
-  const { cookies } = await import("next/headers");
-  const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
+  const token = getCachedAccessToken();
 
   if (!API_URL || !token) {
     // Return empty data if API is not available
@@ -161,7 +160,7 @@ export async function getCasesOverviewData(
 
   try {
     // Fetch all cases (we'll filter by date on client side)
-    const res = await fetch(`${API_URL}/cases/`, {
+    const res = await authFetch(`${API_URL}/cases/`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -181,7 +180,7 @@ export async function getCasesOverviewData(
       // Fetch all pages
       let nextUrl = data.next;
       while (nextUrl) {
-        const nextRes = await fetch(nextUrl, {
+        const nextRes = await authFetch(nextUrl, {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
@@ -218,10 +217,7 @@ export async function getCasesByCategoryData(
 ): Promise<Slice[]> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   
-  // Get token from cookies (server-side) - await cookies() in Next.js 15+
-  const { cookies } = await import("next/headers");
-  const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
+  const token = getCachedAccessToken();
 
   if (!API_URL || !token) {
     return [];
@@ -232,7 +228,7 @@ export async function getCasesByCategoryData(
     const { start } = getDateRange(timeFrame);
     const startStr = start.toISOString().split("T")[0];
 
-    const res = await fetch(
+    const res = await authFetch(
       `${API_URL}/reports/cases_by_category/?start=${startStr}`,
       {
         headers: {

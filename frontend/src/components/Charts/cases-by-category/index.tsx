@@ -1,3 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
 import { PeriodPicker } from "@/components/period-picker";
 import { cn } from "@/lib/utils";
 import { getCasesByCategoryData } from "@/services/case-reports-services";
@@ -5,8 +7,14 @@ import { CasesByCategoryDonut } from "./pie";
 
 type PropsType = { timeFrame?: string; className?: string };
 
-export async function CasesByCategory({ timeFrame = "monthly", className }: PropsType) {
-  const data = await getCasesByCategoryData(timeFrame);
+export function CasesByCategory({ timeFrame = "monthly", className }: PropsType) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof getCasesByCategoryData>> | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getCasesByCategoryData(timeFrame).then(value => { if (active) setData(value); });
+    return () => { active = false; };
+  }, [timeFrame]);
+  if (!data) return <div className="p-6">Loading report...</div>;
 
   return (
     <div

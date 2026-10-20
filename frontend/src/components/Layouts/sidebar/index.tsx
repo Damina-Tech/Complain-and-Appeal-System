@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -86,11 +88,11 @@ export function Sidebar() {
       }
 
       // Always fetch from API to ensure we have the latest groups
-      const token = localStorage.getItem("token");
+      const token = getCachedAccessToken();
       if (token) {
         try {
           const API_URL = process.env.NEXT_PUBLIC_API_URL;
-          const res = await fetch(`${API_URL}/auth/me/`, {
+          const res = await authFetch(`${API_URL}/auth/me/`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
           });

@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/services/auth-http";
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -165,7 +166,7 @@ export default function SignUpPage() {
 
       console.log("Sign-up payload:", payload); // Debug log
 
-      const res = await fetch(`${API_URL}/users/`, {
+      const res = await authFetch(`${API_URL}/users/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

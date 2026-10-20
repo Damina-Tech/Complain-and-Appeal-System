@@ -1,11 +1,19 @@
+"use client";
+import { useEffect, useState } from "react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { getTopSources } from "./fetch"; // ⬅️ ensure this path
 
-export async function TopSources({ className }: { className?: string }) {
-  const data = await getTopSources();
+export function TopSources({ className }: { className?: string }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof getTopSources>> | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getTopSources().then(value => { if (active) setData(value); });
+    return () => { active = false; };
+  }, []);
+  if (!data) return <div className="p-6">Loading report...</div>;
   // [{ name: "Web", submissions: 320, resolvedPct: 78, avgDays: 3.1 }, ...]
 
   return (

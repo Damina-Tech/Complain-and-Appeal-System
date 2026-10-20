@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import {
   CallIcon,
   EmailIcon,
@@ -41,7 +43,7 @@ export function PersonalInfoForm() {
   });
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function PersonalInfoForm() {
       try {
         setLoading(true);
         // First get current user info to get the user ID
-        const meRes = await fetch(`${API_URL}/auth/me/`, {
+        const meRes = await authFetch(`${API_URL}/auth/me/`, {
           headers,
           cache: "no-store",
         });
@@ -65,7 +67,7 @@ export function PersonalInfoForm() {
         
         if (!userId) throw new Error("User ID not found");
         
-        const res = await fetch(`${API_URL}/users/${userId}/`, {
+        const res = await authFetch(`${API_URL}/users/${userId}/`, {
           headers,
           cache: "no-store",
         });
@@ -103,7 +105,7 @@ export function PersonalInfoForm() {
         Authorization: `Bearer ${token}`,
       };
       
-      const res = await fetch(`${API_URL}/users/${formData.id}/`, {
+      const res = await authFetch(`${API_URL}/users/${formData.id}/`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({

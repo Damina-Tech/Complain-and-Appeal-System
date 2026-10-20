@@ -1,5 +1,6 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/Layouts/sidebar";
@@ -12,7 +13,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   const checkAuth = () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
     setIsAuthenticated(!!token);
     setIsReady(true);
   };
@@ -44,7 +45,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   // Don't show sidebar/header on auth routes or root (which redirects)
-  const isAuthRoute = pathname?.startsWith("/auth");
+  const isAuthRoute = pathname?.startsWith("/auth") || pathname === "/login";
   const isRootRoute = pathname === "/";
 
   // If not ready, show nothing (prevents flash)

@@ -35,7 +35,6 @@ def user_login(request):
 
     # Try authenticating directly as username
     user = authenticate(request, username=identifier, password=password)
-    print(user)
     # If that fails, try resolving identifier as email to a username
     if user is None and '@' in identifier:
         try:
@@ -45,7 +44,6 @@ def user_login(request):
             user = None
     if user is not None:
         login(request, user)
-        print(user)
         # Generate JWT token
         refresh = RefreshToken.for_user(user)   
         # Create a custom response with the token
@@ -212,3 +210,9 @@ def reset_password(request):
             return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         return Response({'error': 'Invalid request'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([])
+def auth_config(request):
+    from .chiro_auth import auth_settings
+    return Response(auth_settings())

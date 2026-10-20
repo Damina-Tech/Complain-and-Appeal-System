@@ -1,10 +1,9 @@
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 export async function getOverviewData() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
   
-  // Get token from cookies (server-side) - await cookies() in Next.js 15+
-  const { cookies } = await import("next/headers");
-  const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
+  const token = getCachedAccessToken();
 
   if (!API_URL || !token) {
     // Return default values if API is not available
@@ -30,7 +29,7 @@ export async function getOverviewData() {
 
   try {
     // Fetch summary data from API
-    const summaryRes = await fetch(`${API_URL}/reports/summary/`, {
+    const summaryRes = await authFetch(`${API_URL}/reports/summary/`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -47,7 +46,7 @@ export async function getOverviewData() {
     // Fetch assignments to count unique case owners (users assigned to cases)
     let totalCaseOwners = 0;
     try {
-      const assignmentsRes = await fetch(`${API_URL}/assignments/`, {
+      const assignmentsRes = await authFetch(`${API_URL}/assignments/`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -76,7 +75,7 @@ export async function getOverviewData() {
     } catch (e) {
       // If assignments endpoint fails, try to get from cases
       try {
-        const casesRes = await fetch(`${API_URL}/cases/`, {
+        const casesRes = await authFetch(`${API_URL}/cases/`, {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",

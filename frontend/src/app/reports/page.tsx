@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
@@ -53,7 +55,7 @@ const fetchAllPaginated = async <T,>(url: string, headers: HeadersInit): Promise
   let next: string | null = url;
   const all: T[] = [];
   while (next) {
-    const res: Response = await fetch(next, { headers, cache: "no-store" });
+    const res: Response = await authFetch(next, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -194,7 +196,7 @@ export default function ReportsPage() {
   const router = useRouter();
 
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
   const role =
     typeof window !== "undefined" ? localStorage.getItem("role") : null;
 
@@ -289,11 +291,11 @@ export default function ReportsPage() {
       });
 
       const [s, bs, bo, bc, ta] = await Promise.all([
-        fetch(`${API_URL}/reports/summary/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<SummaryResp>,
-        fetch(`${API_URL}/reports/cases_by_status/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<StatusRow[]>,
-        fetch(`${API_URL}/reports/cases_by_office/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<OfficeRow[]>,
-        fetch(`${API_URL}/reports/cases_by_category/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<CategoryRow[]>,
-        fetch(`${API_URL}/reports/top_assignees/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<AssigneeRow[]>,
+        authFetch(`${API_URL}/reports/summary/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<SummaryResp>,
+        authFetch(`${API_URL}/reports/cases_by_status/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<StatusRow[]>,
+        authFetch(`${API_URL}/reports/cases_by_office/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<OfficeRow[]>,
+        authFetch(`${API_URL}/reports/cases_by_category/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<CategoryRow[]>,
+        authFetch(`${API_URL}/reports/top_assignees/${q ? `?${q}` : ""}`, { headers, cache: "no-store" }).then((r: Response) => r.json()) as Promise<AssigneeRow[]>,
       ]);
 
       setSummary(s);

@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -65,7 +67,7 @@ const mapRow = (f: ApiFeedback): Row => ({
 export default function FeedbackAppealPage() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getCachedAccessToken() : null;
   const headers: HeadersInit = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}) as HeadersInit, [token]);
 
   const [loading, setLoading] = useState(false);
@@ -81,7 +83,7 @@ export default function FeedbackAppealPage() {
     let next: string | null = url;
     const all: T[] = [];
     while (next) {
-      const res: Response = await fetch(next, { headers, cache: "no-store" });
+      const res: Response = await authFetch(next, { headers, cache: "no-store" });
       if (!res.ok) throw new Error(`${res.status} while loading ${next}`);
       const data = await res.json();
       if (Array.isArray(data)) {

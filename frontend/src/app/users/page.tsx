@@ -1,5 +1,7 @@
 "use client";
 
+import { getCachedAccessToken } from "@/services/auth-session";
+import { authFetch } from "@/services/auth-http";
 import { useEffect, useMemo, useState } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import {
@@ -123,7 +125,7 @@ export default function UsersPage() {
 
   // auth + current user role
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? getCachedAccessToken() : null;
 
   const currentUserGroups: string[] = useMemo(() => {
     if (typeof window === "undefined") return [];
@@ -148,7 +150,7 @@ export default function UsersPage() {
     const loadUserInfo = async () => {
       if (!API_URL || !token) return;
       try {
-        const res = await fetch(`${API_URL}/auth/me/`, {
+        const res = await authFetch(`${API_URL}/auth/me/`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -209,7 +211,7 @@ export default function UsersPage() {
       setPageError("");
 
       // roles/groups
-      const gr = await fetch(`${API_URL}/groups/`, {
+      const gr = await authFetch(`${API_URL}/groups/`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: "no-store",
       });
@@ -224,7 +226,7 @@ export default function UsersPage() {
       }
 
       // users
-      const res = await fetch(`${API_URL}/users/`, {
+      const res = await authFetch(`${API_URL}/users/`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: "no-store",
       });
@@ -383,7 +385,7 @@ export default function UsersPage() {
         payload.national_id = form.national_id.trim();
       }
 
-      const res = await fetch(`${API_URL}/users/`, {
+      const res = await authFetch(`${API_URL}/users/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -496,7 +498,7 @@ export default function UsersPage() {
       }
 
       // reload users
-      const refreshed = await fetch(`${API_URL}/users/`, {
+      const refreshed = await authFetch(`${API_URL}/users/`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -566,7 +568,7 @@ export default function UsersPage() {
         payload.groups = citizenGroup ? [citizenGroup] : [];
       }
 
-      const res = await fetch(`${API_URL}/users/${selectedUser.id}/`, {
+      const res = await authFetch(`${API_URL}/users/${selectedUser.id}/`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
