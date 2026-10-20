@@ -1,0 +1,41 @@
+name: Inspect CAS Keycloak mappings
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -eu
+            docker ps --filter label=com.docker.compose.project=chiro-auth --format '{{.Names}} {{.Image}}'
+            database=$(docker ps --filter label=com.docker.compose.project=chiro-auth --format '{{.Names}} {{.Image}}' | awk '$2 ~ /^postgres:/ { print $1 }')
+            test -n "$database"
+            docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$database" sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
+            SELECT c.client_id, p.name AS mapper, p.protocol_mapper_name, pc.name AS setting, pc.value
+            FROM client c JOIN realm r ON r.id=c.realm_id
+            JOIN protocol_mapper p ON p.client_id=c.id
+            LEFT JOIN protocol_mapper_config pc ON pc.protocol_mapper_id=p.id
+            WHERE r.name='chirocity' AND c.client_id='cas-web' ORDER BY p.name,pc.name;
+            SELECT cs.name AS scope, link.default_scope, p.protocol_mapper_name, pc.name AS setting, pc.value
+            FROM client c JOIN realm r ON r.id=c.realm_id
+            JOIN client_scope_client link ON link.client_id=c.id
+            JOIN client_scope cs ON cs.id=link.scope_id
+            LEFT JOIN protocol_mapper p ON p.client_scope_id=cs.id
+            LEFT JOIN protocol_mapper_config pc ON pc.protocol_mapper_id=p.id
+            WHERE r.name='chirocity' AND c.client_id='cas-web' ORDER BY cs.name,p.name,pc.name;
+            SELECT g.name AS applicant_group, role.name AS role, c.client_id AS role_client
+            FROM keycloak_group g JOIN realm r ON r.id=g.realm_id
+            LEFT JOIN group_role_mapping m ON m.group_id=g.id
+            LEFT JOIN keycloak_role role ON role.id=m.role_id
+            LEFT JOIN client c ON c.id=role.client
+            WHERE r.name='chirocity' AND g.name='CAS Applicants';
+            SELECT g.name AS applicant_membership FROM user_group_membership m JOIN keycloak_group g ON g.id=m.group_id WHERE m.user_id='ca5043a7-28c4-4a0e-a15a-eed564ab43a8';
+            SQL
