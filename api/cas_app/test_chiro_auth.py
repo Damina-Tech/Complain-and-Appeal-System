@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from .chiro_auth import jwks_client
 from .models import Case, Office
 
-@override_settings(AUTH_MODE="keycloak", ALLOWED_HOSTS=["testserver"], KEYCLOAK_REALM="chirocity", KEYCLOAK_CLIENT_ID="cas-web", KEYCLOAK_AUDIENCE="cas-api")
+@override_settings(CAS_REQUIRE_VERIFIED_EMAIL=True, AUTH_MODE="keycloak", ALLOWED_HOSTS=["testserver"], KEYCLOAK_REALM="chirocity", KEYCLOAK_CLIENT_ID="cas-web", KEYCLOAK_AUDIENCE="cas-api")
 class ChiroAuthTests(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -123,3 +123,24 @@ class ChiroAuthTests(TestCase):
         with CaptureQueriesContext(connection) as captured: self.assertEqual(self.get().status_code,200)
         writes=[q['sql'] for q in captured if q['sql'].lstrip().upper().startswith(('INSERT','UPDATE','DELETE'))]
         self.assertEqual(writes, [])
+
+    @override_settings(CAS_REQUIRE_VERIFIED_EMAIL=False)
+    def test_optional_email_confirmation_still_requires_audience_and_citizen_role(self):
+        response=self.get(self.token(email_verified=False))
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(response.data['user_groups'],['Citizen'])
+        self.assertEqual(self.get(self.token(email_verified=False, aud='account')).status_code,401)
+        self.assertEqual(self.get(self.token(email_verified=False,resource_access={})).status_code,403)
+        self.assertEqual(self.get(self.token(email_verified=False,email='')).status_code,403)
+
+    @override_settings(CAS_REQUIRE_VERIFIED_EMAIL=False)
+    def test_optional_confirmation_never_links_existing_email(self):
+        user=get_user_model().objects.create_user(username='existing', email='citizen@example.com')
+        self.assertEqual(self.get(self.token(email_verified=False)).status_code,403)
+        user.refresh_from_db(); self.assertIsNone(user.keycloak_sub)
+
+    @override_settings(CAS_REQUIRE_VERIFIED_EMAIL=False)
+    def test_public_config_reports_confirmation_policy(self):
+        response=self.client.get('/api/auth/config/')
+        self.assertEqual(response.status_code,200)
+        self.assertFalse(response.data['requireVerifiedEmail'])

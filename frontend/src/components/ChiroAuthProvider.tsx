@@ -5,8 +5,8 @@ import { configureAuth, initializeSso, getCachedAccessToken, signIn, signUp, sig
 import { authFetch, installAxiosAuth } from "@/services/auth-http";
 import { defaultRouteForRole } from "@/lib/role";
 
-type Session = { mode: "local" | "keycloak"; error: string | null; signIn: () => Promise<void>; signUp: () => Promise<void>; signOut: () => Promise<void> };
-const Context = createContext<Session>({ mode: "keycloak", error: null, signIn, signUp, signOut });
+type Session = { requireVerifiedEmail: boolean; mode: "local" | "keycloak"; error: string | null; signIn: () => Promise<void>; signUp: () => Promise<void>; signOut: () => Promise<void> };
+const Context = createContext<Session>({ requireVerifiedEmail: true, mode: "keycloak", error: null, signIn, signUp, signOut });
 export const useChiroAuth = () => useContext(Context);
 let startup: Promise<AuthSettings> | undefined;
 function start() {
@@ -23,6 +23,7 @@ function start() {
 export function ChiroAuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState<"local" | "keycloak">("keycloak");
+  const [requireVerifiedEmail, setRequireVerifiedEmail] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [role, setRole] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export function ChiroAuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("role", me.user_groups?.[0] || "");
       setRole(me.user_groups?.[0] || ""); setAuthorized(true); setError(null);
     };
-    start().then(async config => { if (active) setMode(config.mode); if (config.mode === "keycloak") await hydrate(); })
+    start().then(async config => { if (active) { setMode(config.mode); setRequireVerifiedEmail(config.requireVerifiedEmail !== false); } if (config.mode === "keycloak") await hydrate(); })
       .catch(e => { if (active) { setError(e.message); setAuthorized(false); } })
       .finally(() => { if (active) setReady(true); });
     const ended = () => { if (active) { setAuthorized(false); setError("Your session ended. Please sign in again."); } };
@@ -57,5 +58,5 @@ export function ChiroAuthProvider({ children }: { children: ReactNode }) {
   }, [ready, mode, authorized, pathname, role, router]);
   if (!ready) return <div className="flex min-h-screen items-center justify-center">Loading CAS sign-in...</div>;
   if (mode === "keycloak" && !authorized && pathname !== "/auth/sign-in" && pathname !== "/login" && pathname !== "/auth/sign-up") return <div className="p-8">Redirecting to sign-in...</div>;
-  return <Context.Provider value={{ mode, error, signIn, signUp, signOut }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ mode, requireVerifiedEmail, error, signIn, signUp, signOut }}>{children}</Context.Provider>;
 }

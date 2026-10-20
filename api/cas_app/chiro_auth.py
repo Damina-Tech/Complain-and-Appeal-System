@@ -25,7 +25,7 @@ def auth_settings():
     mode = settings.AUTH_MODE
     url = settings.KEYCLOAK_URL.rstrip("/")
     realm = settings.KEYCLOAK_REALM
-    return {"mode": mode, "url": url, "realm": realm, "clientId": settings.KEYCLOAK_CLIENT_ID}
+    return {"mode": mode, "url": url, "realm": realm, "clientId": settings.KEYCLOAK_CLIENT_ID, "requireVerifiedEmail": settings.CAS_REQUIRE_VERIFIED_EMAIL}
 
 @lru_cache(maxsize=8)
 def jwks_client(issuer):
@@ -59,7 +59,9 @@ def resolve_user(payload):
     if not group_name:
         raise PermissionDenied("Your account has not been granted access to CAS.")
     email = payload.get("email")
-    if not isinstance(email, str) or not email or len(email) > 254 or payload.get("email_verified") is not True:
+    if not isinstance(email, str) or not email or len(email) > 254:
+        raise PermissionDenied("Your Chiro Auth account must include an email address.")
+    if settings.CAS_REQUIRE_VERIFIED_EMAIL and payload.get("email_verified") is not True:
         raise PermissionDenied("Verify your email address in Chiro Auth before accessing CAS.")
     issuer = settings.KEYCLOAK_URL.rstrip("/") + "/realms/" + settings.KEYCLOAK_REALM
     User = get_user_model()

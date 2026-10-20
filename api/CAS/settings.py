@@ -207,3 +207,5 @@ if AUTH_MODE == 'keycloak':
     parsed = urlparse(KEYCLOAK_URL)
     if not parsed.netloc or parsed.scheme not in ('http', 'https') or (not DEBUG and parsed.scheme != 'https') or not re.fullmatch(r'[A-Za-z0-9._-]+', KEYCLOAK_REALM) or not KEYCLOAK_CLIENT_ID or not KEYCLOAK_AUDIENCE:
         raise RuntimeError('Invalid Chiro Auth configuration; production requires HTTPS.')
+
+CAS_REQUIRE_VERIFIED_EMAIL = os.environ.get('CAS_REQUIRE_VERIFIED_EMAIL', 'true').lower() == 'true'

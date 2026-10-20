@@ -1,0 +1,64 @@
+name: Configure CAS email confirmation
+on:
+  workflow_dispatch:
+    inputs:
+      require_verified_email:
+        description: Require verified email for CAS access
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: cas-production
+  cancel-in-progress: false
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/var/www/Complain-and-Appeal-System' }}
+          REQUIRE_VERIFIED_EMAIL: ${{ inputs.require_verified_email }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR,REQUIRE_VERIFIED_EMAIL
+          command_timeout: 10m
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            export CAS_DATA_DIR=/srv/cas
+            compose() { docker compose --env-file .env -f docker-compose.yml -f docker-compose.domains.yml "$@"; }
+            compose exec -T cas-api python manage.py shell -c "from django.conf import settings; assert hasattr(settings, 'CAS_REQUIRE_VERIFIED_EMAIL'), 'Deploy the email policy support first.'"
+            install -d -m 700 /srv/cas-auth-backups
+            backup="/srv/cas-auth-backups/env-email-$(date -u +%Y%m%dT%H%M%SZ)"
+            cp -p .env "$backup"
+            chmod 600 "$backup"
+            rollback() { cat "$backup" > .env; compose up -d --no-deps cas-api || true; }
+            trap rollback EXIT
+            python3 <<'PY'
+            import os
+            from pathlib import Path
+            value = os.environ['REQUIRE_VERIFIED_EMAIL'].lower()
+            if value not in ('true','false'): raise RuntimeError('Invalid email confirmation policy.')
+            path = Path('.env')
+            lines = [line for line in path.read_text().splitlines() if not line.strip().startswith('CAS_REQUIRE_VERIFIED_EMAIL=')]
+            path.write_text('\n'.join(lines)+'\nCAS_REQUIRE_VERIFIED_EMAIL='+value+'\n')
+            path.chmod(0o600)
+            PY
+            compose up -d --no-deps --wait --wait-timeout 180 cas-api
+            compose exec -T -e REQUIRE_VERIFIED_EMAIL cas-api python manage.py shell <<'PY'
+            import os
+            from django.test import Client
+            client = Client(HTTP_HOST='cas-api.chirocity.gov.et')
+            response = client.get('/api/auth/config/')
+            expected = os.environ['REQUIRE_VERIFIED_EMAIL'] == 'true'
+            assert response.status_code == 200 and response.json()['requireVerifiedEmail'] == expected
+            assert client.post('/api/login/', {}).status_code == 403
+            print('CAS require verified email:', expected)
+            print('Local password login remains disabled; token and role checks remain enforced.')
+            PY
+            trap - EXIT

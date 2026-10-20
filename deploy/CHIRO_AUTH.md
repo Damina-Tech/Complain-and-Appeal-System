@@ -32,3 +32,9 @@ Run **Verify live CAS browser login** after activation. It verifies rendering an
 CAS login includes **Sign up as an applicant**, which opens a CAS introduction page and then the Keycloak registration flow with PKCE and the existing `/login` callback. No local password account or privileged role is created by the browser.
 
 Enable **Realm settings > Login > User registration** in the `chirocity` realm. Configure SMTP and email verification for applicants. Each applicant must receive `cas-api > CITIZEN` for own-case access. Assign it manually after review, or map it to a `CAS Applicants` group and make that a default group if all new realm users should automatically receive applicant access. A default group applies to all newly created users in this shared realm; it is not restricted to the CAS registration link. Staff roles must remain explicitly assigned.
+
+## Optional email confirmation
+
+`CAS_REQUIRE_VERIFIED_EMAIL=true` is the default. Set it to `false` in the VPS `.env` and recreate only `cas-api` to allow CAS applicants to sign in without confirming their email. This does not mark the email verified in Keycloak, relax token issuer/signature/audience/client checks, allow unknown CAS roles, or automatically link existing email accounts. The signup instructions follow the runtime policy. Other applications retain their own verification requirements.
+
+Keycloak can still require verification before issuing a token. To allow login without confirmation, its Verify email switch and any applicant Verify Email required action must also permit this. Realm-wide settings affect the shared realm; they do not change other applications' server-side requirements.

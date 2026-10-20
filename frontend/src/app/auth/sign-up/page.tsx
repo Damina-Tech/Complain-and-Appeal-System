@@ -584,7 +584,7 @@ export default function SignUpPage() {
       <p className="text-sm leading-6 text-dark-5 dark:text-dark-6">Your account lets you track your own cases, receive responses, and submit feedback.</p>
       {failure && <p role="alert" className="text-sm text-red-600">{failure}</p>}
       <button className="w-full rounded-lg bg-primary p-4 font-medium text-white" onClick={() => void auth.signUp().catch(error => setFailure(error.message))}>Create applicant account</button>
-      <p className="text-sm leading-6 text-dark-5 dark:text-dark-6">After registration, verify your email to finish setting up your account. Already use another city service? You can sign in with the same Chiro Auth account.</p>
+      <p className="text-sm leading-6 text-dark-5 dark:text-dark-6">{auth.requireVerifiedEmail ? "After registration, verify your email to finish setting up your account." : "After registration, sign in to start submitting and tracking your cases."} Already use another city service? You can sign in with the same Chiro Auth account.</p>
       <p className="text-sm">Already have an account? <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline">Sign in</Link></p>
     </div>
   </AuthPageShell>;

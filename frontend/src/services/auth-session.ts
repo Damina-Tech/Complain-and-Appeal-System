@@ -2,6 +2,7 @@ import Keycloak from "keycloak-js";
 
 export type AuthSettings = {
   mode: "local" | "keycloak";
+  requireVerifiedEmail?: boolean;
   url: string;
   realm: string;
   clientId: string;
