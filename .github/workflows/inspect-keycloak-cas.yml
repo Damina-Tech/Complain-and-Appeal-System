@@ -30,12 +30,14 @@ jobs:
             JOIN client_scope cs ON cs.id=link.scope_id
             LEFT JOIN protocol_mapper p ON p.client_scope_id=cs.id
             LEFT JOIN protocol_mapper_config pc ON pc.protocol_mapper_id=p.id
-            WHERE r.name='chirocity' AND c.client_id='cas-web' ORDER BY cs.name,p.name,pc.name;
+            WHERE r.name='chirocity' AND c.client_id='cas-web' AND cs.name='roles' ORDER BY cs.name,p.name,pc.name;
             SELECT g.name AS applicant_group, role.name AS role, c.client_id AS role_client
             FROM keycloak_group g JOIN realm r ON r.id=g.realm_id
             LEFT JOIN group_role_mapping m ON m.group_id=g.id
             LEFT JOIN keycloak_role role ON role.id=m.role_id
             LEFT JOIN client c ON c.id=role.client
             WHERE r.name='chirocity' AND g.name='CAS Applicants';
+            SELECT c.client_id,c.full_scope_allowed FROM client c JOIN realm r ON r.id=c.realm_id WHERE r.name='chirocity' AND c.client_id='cas-web';
+            SELECT g.name AS default_group FROM default_groups d JOIN keycloak_group g ON g.id=d.group_id JOIN realm r ON r.id=d.realm_id WHERE r.name='chirocity';
             SELECT g.name AS applicant_membership FROM user_group_membership m JOIN keycloak_group g ON g.id=m.group_id WHERE m.user_id='ca5043a7-28c4-4a0e-a15a-eed564ab43a8';
             SQL
